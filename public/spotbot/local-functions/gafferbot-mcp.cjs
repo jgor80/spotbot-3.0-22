@@ -299,10 +299,10 @@ function eaEventCounts(p) {
   }
   return counts;
 }
-function statsFromCounts(c2) {
+function statsFromCounts(c4) {
   const out = {};
   for (const [name2, ids] of Object.entries(EA_EVENT_STATS)) {
-    out[name2] = ids.reduce((sum, id) => sum + (c2 && c2[id] || 0), 0);
+    out[name2] = ids.reduce((sum, id) => sum + (c4 && c4[id] || 0), 0);
   }
   return out;
 }
@@ -2644,8 +2644,8 @@ function keyOf(p) {
   return name2 ? name2.toLowerCase() : null;
 }
 function num(v) {
-  const n = typeof v === "string" ? Number(v) : v;
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
+  const n2 = typeof v === "string" ? Number(v) : v;
+  return typeof n2 === "number" && Number.isFinite(n2) ? n2 : null;
 }
 var MIN_ROLE_GAMES = 3;
 function computeAdvancedPlayers(matches, minGames = 1) {
@@ -2665,9 +2665,9 @@ function computeAdvancedPlayers(matches, minGames = 1) {
         if (!r2) a.roles.set(role, r2 = { games: 0, totals: emptyTotals(), rating: 0, rated: 0 });
         r2.games++;
         addInto(r2.totals, s);
-        const rating = num(p.rating);
-        if (rating !== null && rating > 0) {
-          r2.rating += rating;
+        const rating2 = num(p.rating);
+        if (rating2 !== null && rating2 > 0) {
+          r2.rating += rating2;
           r2.rated++;
         }
       }
@@ -2775,16 +2775,16 @@ function computePartnerships(matches, minTogether = 5) {
   return out.sort((x, y) => gain(y) - gain(x) || y.games - x.games);
 }
 var SESSION_GAP_MS = 90 * 60 * 1e3;
-function computeSessionFatigue(matches, buckets = 5) {
+function computeSessionFatigue(matches, buckets2 = 5) {
   const sorted = [...matches].sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime());
-  const acc = Array.from({ length: buckets }, () => ({ r: rec(), totals: emptyTotals(), playerGames: 0 }));
-  let n = 0;
+  const acc = Array.from({ length: buckets2 }, () => ({ r: rec(), totals: emptyTotals(), playerGames: 0 }));
+  let n2 = 0;
   let last = -Infinity;
   for (const m of sorted) {
     const t = m.playedAt.getTime();
-    n = t - last > SESSION_GAP_MS ? 1 : n + 1;
+    n2 = t - last > SESSION_GAP_MS ? 1 : n2 + 1;
     last = t;
-    const b = acc[Math.min(n, buckets) - 1];
+    const b = acc[Math.min(n2, buckets2) - 1];
     addResult(b.r, m);
     const te = teamEvents(m);
     if (te) {
@@ -2794,7 +2794,7 @@ function computeSessionFatigue(matches, buckets = 5) {
   }
   return acc.map((b, i) => ({
     gameNumber: i + 1,
-    label: i + 1 === buckets ? `Game ${buckets}+` : `Game ${i + 1}`,
+    label: i + 1 === buckets2 ? `Game ${buckets2}+` : `Game ${i + 1}`,
     games: b.r.games,
     winPct: winRate(b.r),
     decisionScore: decisionScore(b.totals),
@@ -2805,9 +2805,9 @@ function computeSessionFatigue(matches, buckets = 5) {
 function computePressing(matches) {
   const rows = matches.map((m) => ({ m, te: teamEvents(m) })).filter((x) => !!x.te).map((x) => ({ m: x.m, v: x.te.totals.wonAttackingThird || 0 })).sort((a, b) => a.v - b.v);
   if (rows.length < 9) return [];
-  const cut = (i) => rows[Math.min(rows.length - 1, Math.floor(rows.length * i / 3))].v;
-  const lowMax = cut(1);
-  const midMax = Math.max(cut(2), lowMax + 1);
+  const cut2 = (i) => rows[Math.min(rows.length - 1, Math.floor(rows.length * i / 3))].v;
+  const lowMax = cut2(1);
+  const midMax = Math.max(cut2(2), lowMax + 1);
   const groups = [
     ["Low", (v) => v < lowMax, `0-${Math.max(0, lowMax - 1)}`],
     ["Medium", (v) => v >= lowMax && v < midMax, lowMax === midMax - 1 ? `${lowMax}` : `${lowMax}-${midMax - 1}`],
@@ -2825,7 +2825,7 @@ function computePressing(matches) {
     return { band, range, games: r2.games, winPct: winRate(r2), goalsFor: r2.games ? gf / r2.games : 0, goalsAgainst: r2.games ? ga / r2.games : 0 };
   }).filter((b) => b.games > 0).map((b, i, list) => list.length === 2 ? { ...b, band: i === 0 ? "Low" : "High" } : b);
 }
-var r0 = (n) => `${Math.round(n)}%`;
+var r0 = (n2) => `${Math.round(n2)}%`;
 function generateAdvancedInsights(matches) {
   const out = [];
   if (matches.filter((m) => m.players.some((p) => p.events)).length < 5) return out;
@@ -2912,9 +2912,9 @@ function fc27Percentile(role, metric, value) {
   const q = FC27_BENCHMARKS.roles[role]?.[metric];
   const m = BENCH_METRICS.find((b) => b.key === metric);
   if (!q || value === null || !m) return null;
-  let pct6;
-  if (value <= q[0]) pct6 = 0;
-  else if (value >= q[q.length - 1]) pct6 = 100;
+  let pct7;
+  if (value <= q[0]) pct7 = 0;
+  else if (value >= q[q.length - 1]) pct7 = 100;
   else {
     let i = 0;
     while (i < q.length - 1 && q[i + 1] < value) i++;
@@ -2922,9 +2922,9 @@ function fc27Percentile(role, metric, value) {
     while (j < q.length - 1 && q[j + 1] === value) j++;
     const lo = q[i], hi = q[j];
     const frac = hi > lo ? (value - lo) / (hi - lo) : 0.5;
-    pct6 = (i + frac * (j - i)) * (100 / (q.length - 1));
+    pct7 = (i + frac * (j - i)) * (100 / (q.length - 1));
   }
-  return m.lowerIsBetter ? 100 - pct6 : pct6;
+  return m.lowerIsBetter ? 100 - pct7 : pct7;
 }
 function benchmarkPlayer(p) {
   const role = benchRole(p);
@@ -3089,8 +3089,8 @@ var AREAS = [
   { key: "ratingEdge", label: "Rating edge", help: "Your players' average EA match rating minus the opposition's." }
 ];
 function num2(v) {
-  const n = typeof v === "string" ? Number(v) : v;
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
+  const n2 = typeof v === "string" ? Number(v) : v;
+  return typeof n2 === "number" && Number.isFinite(n2) ? n2 : null;
 }
 var mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 function sideTotals(players) {
@@ -3316,8 +3316,8 @@ function tally(matches) {
   return out;
 }
 var avg = (t) => t.rated ? t.ratingSum / t.rated : null;
-var per = (n, g) => g ? n / g : 0;
-var plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+var per = (n2, g) => g ? n2 / g : 0;
+var plural = (n2, word) => `${n2} ${word}${n2 === 1 ? "" : "s"}`;
 function playerLine(t, usual) {
   const bits = [];
   if (t.gk >= Math.ceil(t.games / 2)) {
@@ -3405,8 +3405,8 @@ var AREA_FIX = {
 
 // src/lib/playerScores.ts
 function num3(v) {
-  const n = typeof v === "string" ? Number(v) : v;
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
+  const n2 = typeof v === "string" ? Number(v) : v;
+  return typeof n2 === "number" && Number.isFinite(n2) ? n2 : null;
 }
 var mean2 = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 var LOWER_IS_BETTER = { lostPerGame: true, concededPerGame: true };
@@ -3567,10 +3567,10 @@ function powerRankings(matches, window2 = 5) {
 function clutchRatings(matches, minClose = 5) {
   const close = matches.filter((m) => Math.abs(m.scoreFor - m.scoreAgainst) <= 1);
   const rest = matches.filter((m) => Math.abs(m.scoreFor - m.scoreAgainst) > 1);
-  const c2 = new Map(playerLines(close).map((l) => [l.key, l]));
+  const c4 = new Map(playerLines(close).map((l) => [l.key, l]));
   const r2 = new Map(playerLines(rest).map((l) => [l.key, l]));
   const out = [];
-  for (const [key, l] of c2) {
+  for (const [key, l] of c4) {
     if (l.games < minClose) continue;
     const other = r2.get(key);
     const edge = l.avgRating !== null && other?.avgRating != null && other.games >= 3 ? l.avgRating - other.avgRating : null;
@@ -3612,12 +3612,12 @@ function carryScores(matches, minGames = 5) {
     const ratingEdge = edgeN ? edgeSum / edgeN : null;
     const involvementShare = goalsWith ? Math.min(1, (l.goals + l.assists) / goalsWith) : 0;
     const winLift = woN >= 3 ? (withW / withN - woW / woN) * 100 : null;
-    const clamp3 = (v) => Math.max(0, Math.min(1, v));
+    const clamp4 = (v) => Math.max(0, Math.min(1, v));
     const parts = [
-      { w: 0.4, v: ratingEdge === null ? null : clamp3((ratingEdge + 0.5) / 1.5) },
+      { w: 0.4, v: ratingEdge === null ? null : clamp4((ratingEdge + 0.5) / 1.5) },
       // Keepers don't score or set up goals, so they are judged on the other two parts only
-      { w: 0.35, v: l.role === "GK" ? null : clamp3(involvementShare / 0.5) },
-      { w: 0.25, v: winLift === null ? null : clamp3((winLift + 30) / 60) }
+      { w: 0.35, v: l.role === "GK" ? null : clamp4(involvementShare / 0.5) },
+      { w: 0.25, v: winLift === null ? null : clamp4((winLift + 30) / 60) }
     ].filter((p) => p.v !== null);
     const wsum = parts.reduce((t, p) => t + p.w, 0);
     const score2 = Math.round(parts.reduce((t, p) => t + p.w * p.v, 0) / wsum * SCORE_MAX);
@@ -3681,8 +3681,8 @@ function defendingSummary(matches, minGames = 5, recentWindow = 10) {
 var keyOf2 = (p) => (p.ea_username || "").trim().toLowerCase();
 var played = (m, key) => m.players.some((p) => keyOf2(p) === key);
 var pts = (m) => m.result === "win" ? 3 : m.result === "draw" ? 1 : 0;
-var f1 = (n) => n.toFixed(1);
-var pctS = (n) => `${Math.round(n)}%`;
+var f1 = (n2) => n2.toFixed(1);
+var pctS = (n2) => `${Math.round(n2)}%`;
 function banterWindow(matches, window2) {
   const sorted = [...matches].sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
   if (!sorted.length || window2 === "all") return sorted;
@@ -3987,17 +3987,17 @@ function headToHead(matches, a, b) {
     const better = va === null || vb === null || Math.abs(va - vb) < 1e-9 ? null : va > vb !== lowerBetter ? 0 : 1;
     rows.push({ label, values: [va === null ? "\u2013" : fmt2(va), vb === null ? "\u2013" : fmt2(vb)], better });
   };
-  add("Games", la.games, lb.games, (n) => String(n));
+  add("Games", la.games, lb.games, (n2) => String(n2));
   add("Average rating", la.avgRating, lb.avgRating, f1);
   add("Win rate", la.wins / la.games * 100, lb.wins / lb.games * 100, pctS);
-  add("Goals a game", la.perGame.goalsPerGame, lb.perGame.goalsPerGame, (n) => n.toFixed(2));
-  add("Chances created a game", la.perGame.chancesCreatedPerGame, lb.perGame.chancesCreatedPerGame, (n) => n.toFixed(2));
+  add("Goals a game", la.perGame.goalsPerGame, lb.perGame.goalsPerGame, (n2) => n2.toFixed(2));
+  add("Chances created a game", la.perGame.chancesCreatedPerGame, lb.perGame.chancesCreatedPerGame, (n2) => n2.toFixed(2));
   add("Pass completion", la.perGame.passCompletion, lb.perGame.passCompletion, pctS);
   add("Tackles won a game", la.perGame.tacklesWonPerGame, lb.perGame.tacklesWonPerGame, f1);
   add("Interceptions a game", la.perGame.interceptionsPerGame, lb.perGame.interceptionsPerGame, f1);
   add("Dribbles a game", la.perGame.dribblesPerGame, lb.perGame.dribblesPerGame, f1);
   add("Ball lost a game", la.perGame.lostPerGame, lb.perGame.lostPerGame, f1, true);
-  add("Man of the match", la.motm, lb.motm, (n) => String(n));
+  add("Man of the match", la.motm, lb.motm, (n2) => String(n2));
   return { players: [la, lb], rows };
 }
 
@@ -4005,10 +4005,10 @@ function headToHead(matches, a, b) {
 var enc = new TextEncoder();
 var CRC_TABLE = (() => {
   const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c2 = n;
-    for (let k = 0; k < 8; k++) c2 = c2 & 1 ? 3988292384 ^ c2 >>> 1 : c2 >>> 1;
-    t[n] = c2 >>> 0;
+  for (let n2 = 0; n2 < 256; n2++) {
+    let c4 = n2;
+    for (let k = 0; k < 8; k++) c4 = c4 & 1 ? 3988292384 ^ c4 >>> 1 : c4 >>> 1;
+    t[n2] = c4 >>> 0;
   }
   return t;
 })();
@@ -4027,50 +4027,50 @@ var COMPETITIONS = [
   { value: "cup", label: "Cup/Playoff", emoji: "\u{1F947}" },
   { value: "friendly", label: "Friendly", emoji: "\u{1F91D}" }
 ];
-function matchTag(row2) {
-  const t = row2.match_data?._tag;
+function matchTag(row3) {
+  const t = row3.match_data?._tag;
   return MATCH_TAGS.some((m) => m.value === t) ? t : null;
 }
-function eaCompetition(row2) {
-  const raw = String(row2.match_data?._matchCategory || row2.match_type || "").toLowerCase();
+function eaCompetition(row3) {
+  const raw = String(row3.match_data?._matchCategory || row3.match_type || "").toLowerCase();
   if (/friendly/.test(raw)) return "friendly";
   if (/competition|cup|playoff/.test(raw)) return "cup";
   return "league";
 }
-function matchCompetition(row2) {
-  return matchTag(row2) || eaCompetition(row2);
+function matchCompetition(row3) {
+  return matchTag(row3) || eaCompetition(row3);
 }
 var LINEUP_WINDOW_MS = 6 * 60 * 60 * 1e3;
 function num4(v) {
-  const n = typeof v === "string" ? Number(v) : v;
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
+  const n2 = typeof v === "string" ? Number(v) : v;
+  return typeof n2 === "number" && Number.isFinite(n2) ? n2 : null;
 }
 function playerKey(p) {
   const name2 = (p.ea_username || "").trim();
   return name2 ? name2.toLowerCase() : null;
 }
-function normalizeResult(row2) {
-  const r2 = (row2.result || "").toLowerCase();
+function normalizeResult(row3) {
+  const r2 = (row3.result || "").toLowerCase();
   if (r2 === "win" || r2 === "w") return "win";
   if (r2 === "loss" || r2 === "l") return "loss";
   if (r2 === "draw" || r2 === "d") return "draw";
-  const f2 = num4(row2.score_for);
-  const a = num4(row2.score_against);
+  const f2 = num4(row3.score_for);
+  const a = num4(row3.score_against);
   if (f2 === null || a === null) return null;
   return f2 > a ? "win" : f2 < a ? "loss" : "draw";
 }
-function matchTime(row2) {
-  const data = row2.match_data;
+function matchTime(row3) {
+  const data = row3.match_data;
   const ts = num4(data?.timestamp);
   if (ts && ts > 1e9) return new Date(ts < 1e12 ? ts * 1e3 : ts);
-  return new Date(row2.created_at || 0);
+  return new Date(row3.created_at || 0);
 }
-function rawClubs(row2) {
-  const byClub = row2.match_data?.players;
+function rawClubs(row3) {
+  const byClub = row3.match_data?.players;
   return byClub && typeof byClub === "object" ? byClub : null;
 }
-function rawPlayerRows(row2, players) {
-  const byClub = rawClubs(row2);
+function rawPlayerRows(row3, players) {
+  const byClub = rawClubs(row3);
   const out = /* @__PURE__ */ new Map();
   if (!byClub) return out;
   const ours = new Set(players.map(playerKey).filter((k) => !!k));
@@ -4090,16 +4090,16 @@ function rawPlayerRows(row2, players) {
   }
   return out;
 }
-function opponentRows(row2, players) {
-  const byClub = rawClubs(row2);
+function opponentRows(row3, players) {
+  const byClub = rawClubs(row3);
   if (!byClub) return [];
   const ours = new Set(players.map(playerKey).filter((k) => !!k));
-  const clubs = Object.values(byClub).filter((c2) => c2 && typeof c2 === "object");
+  const clubs = Object.values(byClub).filter((c4) => c4 && typeof c4 === "object");
   if (clubs.length < 2) return [];
-  const hits = (c2) => Object.values(c2).filter((r2) => r2 && ours.has(String(r2.playername || "").trim().toLowerCase())).length;
-  const mine = clubs.reduce((best, c2) => hits(c2) > hits(best) ? c2 : best, clubs[0]);
+  const hits = (c4) => Object.values(c4).filter((r2) => r2 && ours.has(String(r2.playername || "").trim().toLowerCase())).length;
+  const mine = clubs.reduce((best, c4) => hits(c4) > hits(best) ? c4 : best, clubs[0]);
   if (!hits(mine)) return [];
-  return clubs.filter((c2) => c2 !== mine).flatMap((c2) => Object.values(c2)).filter((r2) => r2 && r2.playername).map((r2) => ({
+  return clubs.filter((c4) => c4 !== mine).flatMap((c4) => Object.values(c4)).filter((r2) => r2 && r2.playername).map((r2) => ({
     ea_username: String(r2.playername).trim(),
     position: r2.pos ?? null,
     rating: num4(r2.rating) ?? void 0,
@@ -4109,8 +4109,8 @@ function opponentRows(row2, players) {
     ...hasEventData(r2) ? { events: eaEventCounts(r2) } : {}
   }));
 }
-function withEvents(row2, players) {
-  const raw = rawPlayerRows(row2, players);
+function withEvents(row3, players) {
+  const raw = rawPlayerRows(row3, players);
   if (!raw.size) return players;
   return players.map((p) => {
     const r2 = raw.get(playerKey(p) || "");
@@ -4121,29 +4121,29 @@ function withEvents(row2, players) {
 function toInsightMatches(rows, lineups = []) {
   const sortedLineups = lineups.map((l) => ({ formation: l.formation, at: new Date(l.created_at).getTime() })).sort((a, b) => a.at - b.at);
   const matches = [];
-  for (const row2 of rows) {
-    const result2 = normalizeResult(row2);
+  for (const row3 of rows) {
+    const result2 = normalizeResult(row3);
     if (!result2) continue;
-    const playedAt = matchTime(row2);
+    const playedAt = matchTime(row3);
     const t = playedAt.getTime();
     let formation = null;
     for (const l of sortedLineups) {
       if (l.at > t) break;
       if (t - l.at <= LINEUP_WINDOW_MS) formation = l.formation;
     }
-    const players = Array.isArray(row2.player_stats) ? row2.player_stats : [];
+    const players = Array.isArray(row3.player_stats) ? row3.player_stats : [];
     matches.push({
-      id: row2.id,
+      id: row3.id,
       result: result2,
-      scoreFor: num4(row2.score_for) ?? 0,
-      scoreAgainst: num4(row2.score_against) ?? 0,
-      matchType: row2.match_type,
-      tag: matchTag(row2),
-      competition: matchCompetition(row2),
+      scoreFor: num4(row3.score_for) ?? 0,
+      scoreAgainst: num4(row3.score_against) ?? 0,
+      matchType: row3.match_type,
+      tag: matchTag(row3),
+      competition: matchCompetition(row3),
       playedAt,
-      opponent: row2.opponent_club_name || "Unknown",
-      players: withEvents(row2, players),
-      opponentPlayers: opponentRows(row2, players),
+      opponent: row3.opponent_club_name || "Unknown",
+      players: withEvents(row3, players),
+      opponentPlayers: opponentRows(row3, players),
       formation
     });
   }
@@ -4312,12 +4312,12 @@ var ARCHETYPE_RULES = {
   target: { signatures: ["Precision Header", "Enforcer"], perk45: { name: "Physical Shooter", trigger: "shield off a defender then shoot in the box", boosts: "Strength, Shot Power, Balance" } }
 };
 var SPECIALIZATION_TARGETS = { main: 92, other: 90 };
-var spec = (archetype, name2, plus, a, b, c2, unconfirmed) => ({
+var spec = (archetype, name2, plus, a, b, c4, unconfirmed) => ({
   key: `${archetype}.${name2.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
   archetype,
   name: name2,
   plus,
-  req: [[a, SPECIALIZATION_TARGETS.main], [b, SPECIALIZATION_TARGETS.other], ...c2 ? [[c2, SPECIALIZATION_TARGETS.other]] : []],
+  req: [[a, SPECIALIZATION_TARGETS.main], [b, SPECIALIZATION_TARGETS.other], ...c4 ? [[c4, SPECIALIZATION_TARGETS.other]] : []],
   ...unconfirmed ? { unconfirmed } : {}
 });
 var SPECIALIZATIONS = [
@@ -4446,8 +4446,8 @@ var emptyBuild = (archetype = "finisher") => ({
 });
 var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 var int = (v, lo, hi, fallback) => {
-  const n = Math.round(Number(v));
-  return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
+  const n2 = Math.round(Number(v));
+  return Number.isFinite(n2) ? clamp(n2, lo, hi) : fallback;
 };
 var startValue = (archetype, key) => START_VALUES[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
 var trainable = (archetype, key) => startValue(archetype, key) > 0;
@@ -4460,8 +4460,8 @@ function normaliseBuild(b) {
   for (const [k, v] of Object.entries(b.points ?? {})) {
     const a = ATTR_BY_ANY.get(k.toLowerCase());
     if (!a || !trainable(archetype, a.key)) continue;
-    const n = int(v, 0, attrCap(archetype, a.key) - startValue(archetype, a.key), 0);
-    if (n) points[a.key] = n;
+    const n2 = int(v, 0, attrCap(archetype, a.key) - startValue(archetype, a.key), 0);
+    if (n2) points[a.key] = n2;
   }
   const known = new Set(PLAYSTYLE_DEFS.filter((p) => !p.keeperOnly || isKeeper(archetype)).map((p) => p.name));
   const sigs = new Set(ARCHETYPE_RULES[archetype]?.signatures ?? []);
@@ -4560,12 +4560,12 @@ function metaBuildFor(position, rows, now2 = Date.now()) {
   const archetype = top ? { key: top[0], name: archName(top[0]), share: Math.round(top[1] / voteTotal * 100) / 100 } : null;
   const alternatives = ranked.slice(1, 4).map(([k, v]) => ({ name: archName(k), share: Math.round(v / voteTotal * 100) / 100, builds: backed.filter((x) => x.r.archetype === k).length }));
   const sameArch = archetype ? backed.filter((x) => x.r.archetype === archetype.key) : backed;
-  const median4 = (get) => {
+  const median5 = (get) => {
     const own = sameArch.filter((x) => (get(x.r) ?? 0) > 0);
     return weightedMedian((own.length >= 2 ? own : backed).map((x) => ({ v: get(x.r) ?? 0, w: x.w })));
   };
-  const heightCm = median4((r2) => r2.height_cm), weightKg = median4((r2) => r2.weight_kg);
-  const skillMoves = median4((r2) => r2.skill_moves), weakFoot = median4((r2) => r2.weak_foot);
+  const heightCm = median5((r2) => r2.height_cm), weightKg = median5((r2) => r2.weight_kg);
+  const skillMoves = median5((r2) => r2.skill_moves), weakFoot = median5((r2) => r2.weak_foot);
   const signatures = new Set(archetype ? ARCHETYPE_RULES[archetype.key]?.signatures ?? [] : []);
   const known = new Set(PLAYSTYLES.map((p) => p.name).filter((p) => !signatures.has(p)));
   const playstyles = shares(backed, (r2) => r2.playstyles.map(canonStyle).filter((p) => known.has(p)), total, 0.25, MAX_PLAYSTYLES);
@@ -4580,9 +4580,9 @@ function metaBuildFor(position, rows, now2 = Date.now()) {
     topSources.push(toSource(best.r));
   }
   const warnings = mine.filter((r2) => r2.stance < 0).sort((a, b) => (Number(b.weight) || 0) - (Number(a.weight) || 0)).slice(0, 4).map((r2) => ({ statement: r2.statement, source: toSource(r2) }));
-  const n = backed.length;
-  const agreement = n < 3 ? "early" : (archetype?.share ?? 0) >= 0.6 ? "agreed" : (archetype?.share ?? 0) >= 0.4 ? "leaning" : "split";
-  const build = archetype || n ? normaliseBuild({
+  const n2 = backed.length;
+  const agreement = n2 < 3 ? "early" : (archetype?.share ?? 0) >= 0.6 ? "agreed" : (archetype?.share ?? 0) >= 0.4 ? "leaning" : "split";
+  const build = archetype || n2 ? normaliseBuild({
     name: `Community meta ${pos.key}`,
     archetype: archetype?.key ?? ARCHETYPES.find((a) => a.line === pos.line).key,
     level: linked?.r.level ?? 1,
@@ -4598,7 +4598,7 @@ function metaBuildFor(position, rows, now2 = Date.now()) {
   return {
     position,
     label: pos.label,
-    builds: n,
+    builds: n2,
     sources: sources.size,
     agreement,
     archetype,
@@ -4699,7 +4699,7 @@ function validateInput(input, size) {
   }
   const names = /* @__PURE__ */ new Map();
   for (const s of input.slots) names.set(norm(s.card.name) ?? "", (names.get(norm(s.card.name) ?? "") ?? 0) + 1);
-  for (const [n, c2] of names) if (n && c2 > 1) warnings.push(`"${n}" appears ${c2} times; the game allows one version of a player per squad`);
+  for (const [n2, c4] of names) if (n2 && c4 > 1) warnings.push(`"${n2}" appears ${c4} times; the game allows one version of a player per squad`);
   if (input.slots.length < size) warnings.push(`Only ${input.slots.length} of ${size} slots filled`);
   return warnings;
 }
@@ -4710,9 +4710,9 @@ function computeSquadChemistry(input, rules) {
   const maxPerPlayer = mod(rules, "player.max_chemistry");
   const contributors = input.slots.filter(isInPosition);
   const counts = { club: /* @__PURE__ */ new Map(), league: /* @__PURE__ */ new Map(), nation: /* @__PURE__ */ new Map() };
-  const add = (t, key, n) => {
-    if (key === null || n === 0) return;
-    counts[t].set(key, (counts[t].get(key) ?? 0) + n);
+  const add = (t, key, n2) => {
+    if (key === null || n2 === 0) return;
+    counts[t].set(key, (counts[t].get(key) ?? 0) + n2);
   };
   for (const s of contributors) {
     const icon = !!s.card.is_icon;
@@ -4854,7 +4854,7 @@ function diffSquadChemistry(before, after) {
 var FACE_STATS = ["pac", "sho", "pas", "dri", "def", "phy"];
 
 // supabase/functions/_shared/fut/xilab/workspace/formations.ts
-var f = (rows) => rows.flatMap((r2, row2) => r2.map(([slot, position]) => ({ slot, position, row: row2 })));
+var f = (rows) => rows.flatMap((r2, row3) => r2.map(([slot, position]) => ({ slot, position, row: row3 })));
 var GK = [["GK", "GK"]];
 var BACK3 = [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]];
 var BACK4 = [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
@@ -4901,6 +4901,11 @@ var FORMATIONS = {
   "5-4-1": f([GK, BACK5, MID4, ST])
 };
 var FORMATION_NAMES = Object.keys(FORMATIONS);
+function formationSlots(formation) {
+  const slots = FORMATIONS[formation];
+  if (!slots) throw new Error(`Unknown formation "${formation}". Known: ${FORMATION_NAMES.join(", ")}`);
+  return slots;
+}
 
 // supabase/functions/_shared/fut/xilab/workspace/fit.ts
 var DEFAULT_PROFILES = {
@@ -4943,6 +4948,20 @@ var normName = (s) => s.trim().toLowerCase();
 function newId(prefix = "sq") {
   const r2 = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
   return `${prefix}_${r2}`;
+}
+function createSquad(opts) {
+  const t = now();
+  return {
+    id: opts.id ?? newId(),
+    owner_id: opts.owner_id ?? "local",
+    name: opts.name ?? `My ${opts.formation}`,
+    formation: opts.formation,
+    manager: null,
+    slots: formationSlots(opts.formation).map((s) => ({ slot: s.slot, position: s.position, card: null, locked: false })),
+    budget: opts.budget ?? 0,
+    created_at: t,
+    updated_at: t
+  };
 }
 function slotIndex(squad, slot) {
   const i = squad.slots.findIndex((s) => same(s.slot, slot));
@@ -5087,10 +5106,10 @@ function diagnoseSlot(squad, slot, rules, evaluation) {
     }
     const mParts = [];
     for (const t of ["nation", "league"]) {
-      const c2 = rules.modifiers[`manager.${t}_count`] ?? 0;
+      const c4 = rules.modifiers[`manager.${t}_count`] ?? 0;
       const l = links.find((x) => x.type === t);
       const already = norm2(t === "nation" ? squad.manager?.nation : squad.manager?.league) === norm2(l.key);
-      if (c2 && l.key && !already && l.needed_for_next !== null && l.needed_for_next <= c2) mParts.push(`${l.key} ${t}`);
+      if (c4 && l.key && !already && l.needed_for_next !== null && l.needed_for_next <= c4) mParts.push(`${l.key} ${t}`);
     }
     if (mParts.length) levers.push(`A manager matching ${mParts.join(" and ")} would count toward ${mParts.length === 2 ? "both thresholds" : "that threshold"} (rule version ${rules.id}: the manager adds to link counts).`);
   }
@@ -5175,10 +5194,10 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     if (k) wantKeys.set(t, k);
   }
   const coreCount = (t, key, exceptSlot) => key ? squad.slots.filter((s) => s.card && s.slot !== exceptSlot && norm3(s.card[t]) === key).length : 0;
-  const relevance = (c2, slot) => {
+  const relevance = (c4, slot) => {
     let r2 = 0;
     for (const t of LINK_TYPES) {
-      const key = norm3(c2[t]);
+      const key = norm3(c4[t]);
       if (!key) continue;
       if (wantKeys.get(t) === key) {
         const need = tp?.breakdown[t].needed_for_next;
@@ -5193,7 +5212,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
   let candidateCount = 0;
   for (const s of swappable) {
     const taken = names(squad, s.slot);
-    const options_ = pool.cards.filter((c2) => c2.id !== s.card?.id && c2.positions.some((p) => same2(p, s.position)) && !taken.has(norm3(c2.name))).map((c2) => ({ c: c2, cost: costOf(c2) })).filter((x) => x.cost !== null && x.cost <= budget).map((x) => ({ ...x, rel: relevance(x.c, s.slot) })).filter((x) => x.rel > 0).sort((a, b) => b.rel - a.rel || a.cost - b.cost).slice(0, K);
+    const options_ = pool.cards.filter((c4) => c4.id !== s.card?.id && c4.positions.some((p) => same2(p, s.position)) && !taken.has(norm3(c4.name))).map((c4) => ({ c: c4, cost: costOf(c4) })).filter((x) => x.cost !== null && x.cost <= budget).map((x) => ({ ...x, rel: relevance(x.c, s.slot) })).filter((x) => x.rel > 0).sort((a, b) => b.rel - a.rel || a.cost - b.cost).slice(0, K);
     candidateCount += options_.length;
     for (const o of options_) moves.push({ kind: "card", slot: s.slot, card: o.c, cost: o.cost });
   }
@@ -5246,7 +5265,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
         checked++;
         if (met(child.ev)) {
           if (!allowLoss && child.ev.chemistry.total < base.chemistry.total) {
-            const losers = diffSquadChemistry(base.chemistry, child.ev.chemistry).changes.filter((c2) => c2.delta < 0 && c2.name_before === c2.name_after);
+            const losers = diffSquadChemistry(base.chemistry, child.ev.chemistry).changes.filter((c4) => c4.delta < 0 && c4.name_before === c4.name_after);
             rejected.push({ st: child, reason: `Net loss: team chemistry ${base.chemistry.total} -> ${child.ev.chemistry.total}${losers.length ? `; ${losers.map((l) => `${l.name_after} ${l.before}->${l.after}`).join(", ")}` : ""}` });
           } else found.push(child);
           continue;
@@ -5328,12 +5347,12 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     }
     if (mgr) explanation.push(`Change manager to ${mgr.to}${mgr.cost ? ` (${mgr.cost.toLocaleString("en-US")})` : ""}.`);
     if (target) explanation.push(`${target.card.name}: ${slotChem(base)} -> ${slotChem(st.ev)}.`);
-    const gain = diff2.changes.filter((c2) => c2.delta > 0 && c2.name_before === c2.name_after && c2.slot !== target?.slot);
-    const loss = diff2.changes.filter((c2) => c2.delta < 0 && c2.name_before === c2.name_after);
-    if (gain.length) explanation.push(`Also gain: ${gain.map((c2) => `${c2.name_after} ${c2.before}->${c2.after}`).join(", ")}.`);
-    if (loss.length) explanation.push(`Lose: ${loss.map((c2) => `${c2.name_after} ${c2.before}->${c2.after}`).join(", ")}.`);
+    const gain = diff2.changes.filter((c4) => c4.delta > 0 && c4.name_before === c4.name_after && c4.slot !== target?.slot);
+    const loss = diff2.changes.filter((c4) => c4.delta < 0 && c4.name_before === c4.name_after);
+    if (gain.length) explanation.push(`Also gain: ${gain.map((c4) => `${c4.name_after} ${c4.before}->${c4.after}`).join(", ")}.`);
+    if (loss.length) explanation.push(`Lose: ${loss.map((c4) => `${c4.name_after} ${c4.before}->${c4.after}`).join(", ")}.`);
     explanation.push(`Team chemistry ${base.chemistry.total} -> ${st.ev.chemistry.total}/${st.ev.chemistry.max} (all ${st.ev.filled} starters recalculated).`);
-    const named = { ...st.squad, name: `${squad.name} (option ${i + 1})` };
+    const named2 = { ...st.squad, name: `${squad.name} (option ${i + 1})` };
     return {
       ...prov,
       id: `opt_${i + 1}_${st.moves.map(moveKey).sort().join("_")}`,
@@ -5350,7 +5369,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
       diff: diff2,
       buy: costBetween(squad, st.squad).buy,
       explanation,
-      squad: named
+      squad: named2
     };
   }
 }
@@ -5404,7 +5423,7 @@ var norm4 = (s) => s?.trim().toLowerCase() ?? "";
 function filterCards(cards, q) {
   const text2 = norm4(q.text);
   return cards.filter(
-    (c2) => (!text2 || [c2.name, c2.club, c2.league, c2.nation].some((v) => norm4(v).includes(text2))) && (!q.position || c2.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c2.league) === norm4(q.league)) && (!q.nation || norm4(c2.nation) === norm4(q.nation)) && (!q.club || norm4(c2.club) === norm4(q.club)) && (!q.owned_only || c2.owned) && (q.max_price === void 0 || c2.owned || typeof c2.price === "number" && c2.price <= q.max_price)
+    (c4) => (!text2 || [c4.name, c4.club, c4.league, c4.nation].some((v) => norm4(v).includes(text2))) && (!q.position || c4.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c4.league) === norm4(q.league)) && (!q.nation || norm4(c4.nation) === norm4(q.nation)) && (!q.club || norm4(c4.club) === norm4(q.club)) && (!q.owned_only || c4.owned) && (q.max_price === void 0 || c4.owned || typeof c4.price === "number" && c4.price <= q.max_price)
   ).slice(0, q.limit ?? 200);
 }
 
@@ -5561,8 +5580,8 @@ var util;
     }
     return keys;
   };
-  util2.find = (arr, checker) => {
-    for (const item of arr) {
+  util2.find = (arr3, checker) => {
+    for (const item of arr3) {
       if (checker(item))
         return item;
     }
@@ -9338,8 +9357,8 @@ function custom(check, _params = {}, fatal) {
     return ZodAny.create().superRefine((data, ctx) => {
       const r2 = check(data);
       if (r2 instanceof Promise) {
-        return r2.then((r3) => {
-          if (!r3) {
+        return r2.then((r4) => {
+          if (!r4) {
             const params = cleanParams(_params, data);
             const _fatal = params.fatal ?? fatal ?? true;
             ctx.addIssue({ code: "custom", ...params, fatal: _fatal });
@@ -9622,17 +9641,17 @@ async function hydrate(db, userId, rows) {
   const attrs = { data: [] }, styles = { data: [] }, inv = { data: [] };
   for (let i = 0; i < ids.length; i += 100) {
     const part = ids.slice(i, i + 100);
-    const [a, s, n] = await Promise.all([
+    const [a, s, n2] = await Promise.all([
       db.from("card_attributes").select("*").in("card_id", part),
       db.from("card_playstyles").select("*").in("card_id", part),
       db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", part)
     ]);
     fail(a.error);
     fail(s.error);
-    fail(n.error);
+    fail(n2.error);
     attrs.data.push(...a.data ?? []);
     styles.data.push(...s.data ?? []);
-    inv.data.push(...n.data ?? []);
+    inv.data.push(...n2.data ?? []);
   }
   const attrBy = new Map(attrs.data.map((a) => [a.card_id, a]));
   const invBy = new Map(inv.data.map((i) => [i.card_id, i]));
@@ -9686,7 +9705,7 @@ async function searchMyCards(db, userId, s = {}) {
   const pos = s.position ? positionCode(s.position, "position") : void 0;
   const rows = (data ?? []).filter((r2) => (!q || [r2.player_name, r2.club, r2.league, r2.nation, r2.version].some((v) => typeof v === "string" && v.toLowerCase().includes(q))) && (!pos || r2.positions.includes(pos)) && (s.min_overall === void 0 || Number(r2.overall) >= s.min_overall));
   let cards = await hydrate(db, userId, rows);
-  if (s.owned_only) cards = cards.filter((c2) => c2.owned);
+  if (s.owned_only) cards = cards.filter((c4) => c4.owned);
   return s.all ? cards : cards.slice(0, Math.min(100, Math.max(1, s.limit ?? 25)));
 }
 async function ensureAccount(db, userId) {
@@ -9700,33 +9719,33 @@ async function compareCards(db, userId, ids) {
   if (!Array.isArray(ids) || ids.length < 2 || ids.length > 4) throw new FutError("card_ids must list 2 to 4 card ids.");
   const cards = [];
   for (const id of [...new Set(ids.map(String))]) {
-    const c2 = await getCard(db, userId, id);
-    if (!c2) throw new FutError(`Card ${id} wasn't found among your cards.`, 404);
-    cards.push(c2);
+    const c4 = await getCard(db, userId, id);
+    if (!c4) throw new FutError(`Card ${id} wasn't found among your cards.`, 404);
+    cards.push(c4);
   }
   if (cards.length < 2) throw new FutError("Pick at least two different cards.");
   const fields = ["overall", ...FACE];
-  const value = (c2, f2) => f2 === "overall" ? c2.overall : c2.stats[f2];
+  const value = (c4, f2) => f2 === "overall" ? c4.overall : c4.stats[f2];
   const leaders = {};
   for (const f2 of fields) {
-    const known = cards.filter((c2) => value(c2, f2) !== void 0);
+    const known = cards.filter((c4) => value(c4, f2) !== void 0);
     if (known.length < 2) {
       leaders[f2] = null;
       continue;
     }
-    const best = Math.max(...known.map((c2) => value(c2, f2)));
-    leaders[f2] = { best, card_ids: known.filter((c2) => value(c2, f2) === best).map((c2) => c2.id) };
+    const best = Math.max(...known.map((c4) => value(c4, f2)));
+    leaders[f2] = { best, card_ids: known.filter((c4) => value(c4, f2) === best).map((c4) => c4.id) };
   }
   const shared = (k) => {
     const v = cards[0][k];
-    return v !== null && cards.every((c2) => c2[k]?.toLowerCase() === v.toLowerCase()) ? v : null;
+    return v !== null && cards.every((c4) => c4[k]?.toLowerCase() === v.toLowerCase()) ? v : null;
   };
   return {
     cards,
     leaders,
-    shared_positions: cards.map((c2) => c2.positions).reduce((a, b) => a.filter((p) => b.includes(p))),
+    shared_positions: cards.map((c4) => c4.positions).reduce((a, b) => a.filter((p) => b.includes(p))),
     shared: { club: shared("club"), league: shared("league"), nation: shared("nation") },
-    evidence: weakestEvidence(cards.map((c2) => c2.evidence)),
+    evidence: weakestEvidence(cards.map((c4) => c4.evidence)),
     note: "Compares the numbers entered for each card. It shows who has the higher number, not who plays better in a match; missing numbers are left out, never guessed."
   };
 }
@@ -9759,20 +9778,20 @@ async function activeRules(db, season = "FC27") {
   const modifiers = Object.fromEntries((m.data ?? []).map((r2) => [r2.key, Number(r2.value)]));
   return { id: v.id, season: v.season, status: v.status, thresholds, modifiers };
 }
-var toWorkspaceCard = (c2) => ({
-  id: c2.id,
-  name: c2.player_name,
-  club: c2.club,
-  league: c2.league,
-  nation: c2.nation,
-  positions: c2.positions,
-  is_icon: c2.is_icon,
-  is_hero: c2.is_hero,
-  rating: c2.overall,
-  price: c2.owned ? 0 : c2.price,
-  owned: c2.owned,
-  stats: c2.stats,
-  source: c2.source === "user_entered" ? "user" : "database"
+var toWorkspaceCard = (c4) => ({
+  id: c4.id,
+  name: c4.player_name,
+  club: c4.club,
+  league: c4.league,
+  nation: c4.nation,
+  positions: c4.positions,
+  is_icon: c4.is_icon,
+  is_hero: c4.is_hero,
+  rating: c4.overall,
+  price: c4.owned ? 0 : c4.price,
+  owned: c4.owned,
+  stats: c4.stats,
+  source: c4.source === "user_entered" ? "user" : "database"
 });
 var PgCardSource = class {
   constructor(db) {
@@ -9802,7 +9821,7 @@ var PgSquadStore = class {
       const { data, error } = await this.db.from("player_cards").select("*").in("id", cardIds);
       fail(error);
       const visible = (data ?? []).filter((r2) => r2.owner_user_id === null || r2.owner_user_id === owner);
-      for (const c2 of await hydrate(this.db, owner, visible)) fresh.set(c2.id, toWorkspaceCard(c2));
+      for (const c4 of await hydrate(this.db, owner, visible)) fresh.set(c4.id, toWorkspaceCard(c4));
     }
     return rows.map((r2) => ({
       id: r2.id,
@@ -9843,7 +9862,7 @@ var PgSquadStore = class {
     fail(error);
     if (existing && existing.user_id !== owner) throw new NotFoundError(`No squad ${squad.id}`);
     const parent = squad.parent_id && squad.parent_id !== squad.id && await this.get(owner, squad.parent_id) ? squad.parent_id : null;
-    const row2 = {
+    const row3 = {
       name: squad.name,
       formation: squad.formation,
       platform: squad.platform ?? null,
@@ -9853,14 +9872,14 @@ var PgSquadStore = class {
       updated_at: squad.updated_at
     };
     if (existing) {
-      fail((await this.db.from("squads").update(row2).eq("id", squad.id).eq("user_id", owner)).error);
+      fail((await this.db.from("squads").update(row3).eq("id", squad.id).eq("user_id", owner)).error);
       fail((await this.db.from("squad_slots").delete().eq("squad_id", squad.id)).error);
     } else {
       const { count, error: e } = await this.db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", owner);
       fail(e);
       if ((count ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads. Delete one first.`);
       await ensureAccount(this.db, owner);
-      fail((await this.db.from("squads").insert({ ...row2, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
+      fail((await this.db.from("squads").insert({ ...row3, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
     }
     const slots = [];
     for (const [i, s] of squad.slots.entries()) {
@@ -9929,6 +9948,7 @@ var SLOT_NAMES = new Set(SLOT_POSITION.keys());
 var POS_RE = "(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|RF|LF|LCB|RCB|LCM|RCM|LCDM|RCDM|LCAM|RCAM|LST|RST)";
 var LINE = new RegExp(`^${POS_RE}\\s*[:\\-\u2013.)]?\\s+(.+?)\\s*$`, "i");
 var LINE_REVERSED = new RegExp(`^(.+?)\\s*[:\\-\u2013(,]\\s*${POS_RE}\\)?\\s*$`, "i");
+var ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 var nullable = (type, extra = {}) => ({ anyOf: [{ type, ...extra }, { type: "null" }] });
 var SCHEMA = {
   type: "object",
@@ -9949,6 +9969,18 @@ var SCHEMA = {
     note: nullable("string")
   }
 };
+async function callClaude(env, fetchFn, body) {
+  const key = env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY");
+  if (!key) throw new FutError('Reading free text and screenshots needs a Claude API key: add yours on your profile. Typed lists like "ST Mbappe 91" still work.', 503);
+  const send = (b, beta) => fetchFn(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json", ...beta ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {} },
+    body: JSON.stringify(b)
+  });
+  let res = await send({ ...body, fallbacks: "default" }, true);
+  if (res.status === 400 && /fallback/i.test(await res.clone().text().catch(() => ""))) res = await send(body, false);
+  return res;
+}
 
 // supabase/functions/_shared/fut/knowledge.ts
 var KB_CATEGORIES = ["formations", "tactics", "players", "playstyles", "attacking", "defending", "skills", "settings", "modes", "market", "other"];
@@ -10023,8 +10055,8 @@ var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var PROBE_ALL_LIMIT = 50;
 var str = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
 var clampInt = (v, def, min, max) => {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : def;
+  const n2 = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n2) ? Math.min(max, Math.max(min, Math.round(n2))) : def;
 };
 var guildIdProp = { type: "string", description: "Discord server ID from list_servers. Optional when you are in only one server." };
 var clubKeyProp = { type: "string", description: "Club key from list_servers (e.g. club1) for servers that run more than one club." };
@@ -10039,11 +10071,11 @@ async function accessibleServers(ctx) {
   const linked = new Set([...played2 || [], ...roles || []].map((r2) => r2.guild_id));
   const candidates = all.length <= PROBE_ALL_LIMIT ? all : all.filter((g) => linked.has(g.guild_id));
   const checked = await Promise.all(candidates.map(async (g) => ({ g, level: await ctx.access(g.guild_id) })));
-  return checked.filter((c2) => c2.level).map(({ g, level }) => ({
+  return checked.filter((c4) => c4.level).map(({ g, level }) => ({
     guild_id: g.guild_id,
     name: g.name,
     your_access: level,
-    clubs: (Array.isArray(g.clubs) ? g.clubs : []).filter((c2) => c2 && c2.enabled !== false).map((c2) => ({ club_key: c2.key, name: c2.name, ea_linked: !!c2.ea_club_id }))
+    clubs: (Array.isArray(g.clubs) ? g.clubs : []).filter((c4) => c4 && c4.enabled !== false).map((c4) => ({ club_key: c4.key, name: c4.name, ea_linked: !!c4.ea_club_id }))
   }));
 }
 var LEADER_ROLES2 = ["admin", "moderator", "manager", "captain"];
@@ -10528,8 +10560,8 @@ var TOOLS = [
           ball_winning: r02(p.areas.ballWinning)
         })),
         power_rankings: powerRankings(matches).map((r2) => ({ rank: r2.rank, player: r2.name, move: r2.move, avg_rating: r13(r2.avgRating), goals: r2.goals, assists: r2.assists, win_streak: r2.streak })),
-        carry: carryScores(matches, minGames).map((c2) => ({ player: c2.name, score: c2.score, label: c2.label, rating_edge: r13(c2.ratingEdge), goal_involvement_share_pct: Math.round(c2.involvementShare * 100), win_lift_pts: r13(c2.winLift) })),
-        clutch: clutchRatings(matches, Math.max(3, minGames - 1)).map((c2) => ({ player: c2.name, close_games: c2.closeGames, close_rating: r13(c2.closeRating), other_rating: r13(c2.otherRating), edge: r13(c2.edge), label: c2.label })),
+        carry: carryScores(matches, minGames).map((c4) => ({ player: c4.name, score: c4.score, label: c4.label, rating_edge: r13(c4.ratingEdge), goal_involvement_share_pct: Math.round(c4.involvementShare * 100), win_lift_pts: r13(c4.winLift) })),
+        clutch: clutchRatings(matches, Math.max(3, minGames - 1)).map((c4) => ({ player: c4.name, close_games: c4.closeGames, close_rating: r13(c4.closeRating), other_rating: r13(c4.otherRating), edge: r13(c4.edge), label: c4.label })),
         defending: {
           trend: d.trend,
           recent: d.recent,
@@ -10668,7 +10700,7 @@ var KeyError = class extends Error {
     this.status = status;
   }
 };
-var unb64 = (text2) => Uint8Array.from(atob(text2), (c2) => c2.charCodeAt(0));
+var unb64 = (text2) => Uint8Array.from(atob(text2), (c4) => c4.charCodeAt(0));
 var aad = (scope, owner, provider) => new TextEncoder().encode(`${scope}:${owner}:${provider}`);
 async function sealKey(env) {
   const secret = env("AI_KEY_SECRET") || env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
@@ -10772,13 +10804,13 @@ function mentions(text2, names) {
   }).replace(/<t:(\d+)(?::\w)?>/g, (_m, s) => new Date(Number(s) * 1e3).toISOString());
 }
 function walk(list, fn, label) {
-  for (const c2 of list || []) {
-    if (!c2) continue;
-    fn(c2, label);
-    const inner = c2.type === 18 ? c2.label : void 0;
-    if (c2.components) walk(c2.components, fn, inner);
-    if (c2.component) walk([c2.component], fn, inner ?? c2.label);
-    if (c2.accessory) walk([c2.accessory], fn);
+  for (const c4 of list || []) {
+    if (!c4) continue;
+    fn(c4, label);
+    const inner = c4.type === 18 ? c4.label : void 0;
+    if (c4.components) walk(c4.components, fn, inner);
+    if (c4.component) walk([c4.component], fn, inner ?? c4.label);
+    if (c4.accessory) walk([c4.accessory], fn);
   }
 }
 function panelText(payload, names = {}) {
@@ -10791,39 +10823,39 @@ function panelText(payload, names = {}) {
     for (const f2 of e.fields || []) parts.push(`${f2.name}: ${f2.value}`);
     if (e.footer?.text) parts.push(e.footer.text);
   }
-  walk(payload?.components || [], (c2) => {
-    if (c2.type === 10 && c2.content) parts.push(c2.content);
+  walk(payload?.components || [], (c4) => {
+    if (c4.type === 10 && c4.content) parts.push(c4.content);
   });
   const text2 = mentions(parts.join("\n"), names).trim();
   return text2.length > MAX_TEXT ? `${text2.slice(0, MAX_TEXT)}\u2026` : text2;
 }
 function panelControls(payload) {
   const out = [];
-  walk(payload?.components || [], (c2) => {
-    if (!c2.custom_id || !COMPONENT_KINDS[c2.type]) return;
-    const item = { id: c2.custom_id, kind: COMPONENT_KINDS[c2.type] };
-    if (c2.label) item.label = c2.label;
-    if (c2.placeholder) item.label = c2.placeholder;
-    if (c2.disabled) item.disabled = true;
-    if (c2.type === 3) item.options = (c2.options || []).map((o) => ({ label: o.label, value: o.value, ...o.description ? { description: o.description } : {} }));
-    if (c2.type !== 2) Object.assign(item, { min: c2.min_values ?? 1, max: c2.max_values ?? 1 });
+  walk(payload?.components || [], (c4) => {
+    if (!c4.custom_id || !COMPONENT_KINDS[c4.type]) return;
+    const item = { id: c4.custom_id, kind: COMPONENT_KINDS[c4.type] };
+    if (c4.label) item.label = c4.label;
+    if (c4.placeholder) item.label = c4.placeholder;
+    if (c4.disabled) item.disabled = true;
+    if (c4.type === 3) item.options = (c4.options || []).map((o) => ({ label: o.label, value: o.value, ...o.description ? { description: o.description } : {} }));
+    if (c4.type !== 2) Object.assign(item, { min: c4.min_values ?? 1, max: c4.max_values ?? 1 });
     out.push(item);
   });
   return out.slice(0, 40);
 }
 function formFields(form) {
   const out = [];
-  walk(form?.components || [], (c2, label) => {
-    if (!c2.custom_id || ![3, 4, 5, 6, 7, 8, 19].includes(c2.type)) return;
+  walk(form?.components || [], (c4, label) => {
+    if (!c4.custom_id || ![3, 4, 5, 6, 7, 8, 19].includes(c4.type)) return;
     const f2 = {
-      id: c2.custom_id,
-      label: c2.label || label || c2.placeholder || c2.custom_id,
-      kind: c2.type === 4 ? c2.style === 2 ? "long text" : "text" : c2.type === 19 ? "file upload (not possible here)" : COMPONENT_KINDS[c2.type],
-      required: c2.required !== false
+      id: c4.custom_id,
+      label: c4.label || label || c4.placeholder || c4.custom_id,
+      kind: c4.type === 4 ? c4.style === 2 ? "long text" : "text" : c4.type === 19 ? "file upload (not possible here)" : COMPONENT_KINDS[c4.type],
+      required: c4.required !== false
     };
-    if (c2.value) f2.current = c2.value;
-    if (c2.max_length) f2.max_length = c2.max_length;
-    if (c2.type === 3) f2.options = (c2.options || []).map((o) => ({ label: o.label, value: o.value }));
+    if (c4.value) f2.current = c4.value;
+    if (c4.max_length) f2.max_length = c4.max_length;
+    if (c4.type === 3) f2.options = (c4.options || []).map((o) => ({ label: o.label, value: o.value }));
     out.push(f2);
   });
   return { title: form?.title || "Form", fields: out };
@@ -10855,7 +10887,7 @@ async function hasOwnImageKey(ctx, guildId) {
   return Boolean(await imageKeyFor(ctx.db, (k) => Deno.env.get(k), { userId: ctx.discordUserId, guildId }).catch(() => null));
 }
 async function catalogue(ctx, guildId) {
-  const [c2, ownKey] = await Promise.all([call(ctx, "context", { guildId }), hasOwnImageKey(ctx, guildId)]);
+  const [c4, ownKey] = await Promise.all([call(ctx, "context", { guildId }), hasOwnImageKey(ctx, guildId)]);
   const actions = [];
   const add = (a, area, areaKey) => {
     if (!allowed(a, areaKey, ownKey)) return;
@@ -10877,9 +10909,9 @@ async function catalogue(ctx, guildId) {
       }))
     });
   };
-  for (const a of c2.player?.actions || []) add(a, "Player", null);
-  for (const area of c2.areas || []) for (const a of area.actions || []) add(a, area.label, area.key);
-  return { raw: c2, actions };
+  for (const a of c4.player?.actions || []) add(a, "Player", null);
+  for (const area of c4.areas || []) for (const a of area.actions || []) add(a, area.label, area.key);
+  return { raw: c4, actions };
 }
 async function refuseBlockedControl(ctx, guildId, customId, values = []) {
   const m = customId.match(/^gp:[am]:(.+)$/);
@@ -10975,7 +11007,7 @@ var MANAGE_TOOLS = [
         you_are: raw.leader ? "a club leader (manager, captain or admin)" : "a player",
         timezone: raw.timezone,
         default_channel_id: raw.defaultChannelId,
-        channels: (raw.channels || []).filter((c2) => c2.canSend).map((c2) => ({ id: c2.id, name: c2.name, ...c2.parent ? { category: c2.parent } : {} })),
+        channels: (raw.channels || []).filter((c4) => c4.canSend).map((c4) => ({ id: c4.id, name: c4.name, ...c4.parent ? { category: c4.parent } : {} })),
         actions
       };
     }
@@ -11037,7 +11069,7 @@ var MANAGE_TOOLS = [
       const missing = action.fields.filter((f2) => f2.required && (values[f2.name] === void 0 || values[f2.name] === "")).map((f2) => f2.name);
       if (missing.length) throw new ToolError(`Fill in ${missing.join(", ")} first.`);
       const channelId2 = str2(args.channel_id) || raw.defaultChannelId;
-      const channel = (raw.channels || []).find((c2) => c2.id === channelId2 && c2.canSend);
+      const channel = (raw.channels || []).find((c4) => c4.id === channelId2 && c4.canSend);
       if (!channel) throw new ToolError("Pick a channel_id from list_club_actions that GafferBot can post in.");
       if (!confirmed(args)) {
         notePreview(ctx, "run_club_action", guildId, args);
@@ -11161,8 +11193,8 @@ async function leaderGuild(args, ctx) {
 }
 var keptLine = (kept, include) => {
   if (include) return "Pinned messages and GafferBot panels are included.";
-  const n = (kept?.pinned || 0) + (kept?.gafferbot_panel || 0);
-  return n ? `Keeping ${kept.pinned || 0} pinned and ${kept.gafferbot_panel || 0} GafferBot panel message(s) (sticky panels, event boards). Set include_pinned_and_panels to delete them too.` : "No pinned messages or GafferBot panels are affected.";
+  const n2 = (kept?.pinned || 0) + (kept?.gafferbot_panel || 0);
+  return n2 ? `Keeping ${kept.pinned || 0} pinned and ${kept.gafferbot_panel || 0} GafferBot panel message(s) (sticky panels, event boards). Set include_pinned_and_panels to delete them too.` : "No pinned messages or GafferBot panels are affected.";
 };
 var preview2 = (what, extra = {}) => ({
   preview: true,
@@ -11348,7 +11380,7 @@ async function eventGuild(args, ctx) {
 function changesArg(args) {
   if (args.changes === void 0) return void 0;
   if (!Array.isArray(args.changes)) throw new ToolError("changes must be a list of { slot, player_id }.");
-  return args.changes.slice(0, 20).map((c2) => ({ slot: c2?.slot, player_id: c2?.player_id }));
+  return args.changes.slice(0, 20).map((c4) => ({ slot: c4?.slot, player_id: c4?.player_id }));
 }
 var eventProp = { type: "string", description: "Event ID from list_events." };
 var formationProp = { type: "string", description: `Formation name, e.g. "4-3-3 FLAT". Leave out to use the club's best recent formation.` };
@@ -11537,7 +11569,7 @@ function change2(series, window2) {
   return pct2(start.price, last.price);
 }
 var pct2 = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
-var round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+var round = (n2, d = 2) => Math.round(n2 * 10 ** d) / 10 ** d;
 function window(series, hours) {
   const last = series.at(-1);
   if (!last) return [];
@@ -11640,7 +11672,7 @@ function matchesRule(card, rule) {
   return true;
 }
 function rebalance(def, cards, current, at2) {
-  const want = new Set(cards.filter((c2) => matchesRule(c2, def.rule)).map((c2) => c2.id));
+  const want = new Set(cards.filter((c4) => matchesRule(c4, def.rule)).map((c4) => c4.id));
   const out = [];
   const open = /* @__PURE__ */ new Set();
   for (const m of current) {
@@ -11705,7 +11737,7 @@ function summarizeIndex(def, ix, currentPrices, rules = DEFAULT_MARKET_RULES) {
     distribution: currentPrices.length ? { p10: q(0.1), p25: q(0.25), median: q(0.5), p75: q(0.75), p90: q(0.9) } : null
   };
 }
-var nullRound = (n, d = 2) => n === null ? null : round(n, d);
+var nullRound = (n2, d = 2) => n2 === null ? null : round(n2, d);
 
 // supabase/functions/_shared/fut/xilab/market/regime.ts
 function classifyRegime(indexes, rules = DEFAULT_MARKET_RULES) {
@@ -11745,16 +11777,16 @@ function classifyRegime(indexes, rules = DEFAULT_MARKET_RULES) {
   return { primary, flags, observations, not_evaluable, strategy_notes: strategyNotes(primary, flags), rules_version: rules.id };
 }
 function strategyNotes(primary, flags) {
-  const n = [];
+  const n2 = [];
   if (primary === "insufficient_data") return ["Not enough fresh market data: Market Lab won't rate any setup as favourable."];
-  if (primary === "broadly_falling") n.push("Falling market: mean-reversion buys carry extra risk; a card holding value while peers fall is worth a look, not a buy signal.");
-  if (primary === "broadly_rising") n.push("Rising market: judge momentum against the index, not in coins; most cards rising is not relative strength.");
-  if (primary === "sideways") n.push("Range-bound market: relative value and mean reversion are the most informative Stage A signals.");
-  if (flags.some((f2) => f2.regime === "sbc_driven_demand")) n.push("Fodder outperforming: fodder momentum may be SBC-driven and can reverse when the SBC expires.");
-  if (flags.some((f2) => f2.regime === "promo_volatility")) n.push("Promo volatility: wider downside scenarios are appropriate for promo cards.");
-  return n;
+  if (primary === "broadly_falling") n2.push("Falling market: mean-reversion buys carry extra risk; a card holding value while peers fall is worth a look, not a buy signal.");
+  if (primary === "broadly_rising") n2.push("Rising market: judge momentum against the index, not in coins; most cards rising is not relative strength.");
+  if (primary === "sideways") n2.push("Range-bound market: relative value and mean reversion are the most informative Stage A signals.");
+  if (flags.some((f2) => f2.regime === "sbc_driven_demand")) n2.push("Fodder outperforming: fodder momentum may be SBC-driven and can reverse when the SBC expires.");
+  if (flags.some((f2) => f2.regime === "promo_volatility")) n2.push("Promo volatility: wider downside scenarios are appropriate for promo cards.");
+  return n2;
 }
-var fmt = (n, unit = "%") => `${n >= 0 ? "+" : ""}${Math.round(n * 100) / 100}${unit}`;
+var fmt = (n2, unit = "%") => `${n2 >= 0 ? "+" : ""}${Math.round(n2 * 100) / 100}${unit}`;
 
 // supabase/functions/_shared/fut/xilab/market/signals.ts
 var BENCHMARK_LABEL = {
@@ -11790,9 +11822,9 @@ function relativeStrength(cardSeries, benchmarks, rules = DEFAULT_MARKET_RULES) 
     label: BENCHMARK_LABEL[b.benchmark],
     peers: b.peers,
     cells: WINDOWS.map((w) => {
-      const c2 = change2(cardSeries, w);
+      const c4 = change2(cardSeries, w);
       const bv = b.changes[w];
-      return { window: w, card: r(c2), benchmark: r(bv), diff_pp: c2 === null || bv === null ? null : round(c2 - bv), verdict: rsVerdict(c2, bv, rules) };
+      return { window: w, card: r(c4), benchmark: r(bv), diff_pp: c4 === null || bv === null ? null : round(c4 - bv), verdict: rsVerdict(c4, bv, rules) };
     })
   }));
 }
@@ -11892,7 +11924,7 @@ function assessSignals(input) {
     reasons.push(fresh.status !== "fresh" ? fresh.message : `Only ${input.points} price points (need ${rules.min_points}).`);
     return { status: "insufficient_evidence", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
   }
-  const v = (b, w) => rs.find((x) => x.benchmark === b)?.cells.find((c2) => c2.window === w)?.verdict ?? "insufficient_data";
+  const v = (b, w) => rs.find((x) => x.benchmark === b)?.cells.find((c4) => c4.window === w)?.verdict ?? "insufficient_data";
   const outMarket = v("market", "24h") === "outperforming" && v("market", "72h") !== "underperforming";
   const outPeers = ["category", "rating", "position", "utility"].filter((b) => v(b, "24h") === "outperforming").length;
   const underPeers = ["category", "rating", "position", "utility"].filter((b) => v(b, "24h") === "underperforming").length;
@@ -11938,26 +11970,26 @@ function assessSignals(input) {
   else reasons.push("Nothing unusual against its benchmarks.");
   return { status: "watch", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
 }
-var r = (n) => n === null || n === void 0 ? null : round(n);
+var r = (n2) => n2 === null || n2 === void 0 ? null : round(n2);
 
 // supabase/functions/_shared/fut/xilab/market/thesis.ts
 function analyzeTrade(input, market = { latest_price: null, freshness: null }, rules = DEFAULT_MARKET_RULES) {
   const q = Math.max(1, Math.floor(input.quantity));
-  const { buy_price: buy, target_price: tgt, downside_price: down } = input;
+  const { buy_price: buy, target_price: tgt, downside_price: down2 } = input;
   const investment = buy * q;
   const perTarget = netAfterTax(tgt, rules) - buy;
-  const perDown = netAfterTax(down, rules) - buy;
+  const perDown = netAfterTax(down2, rules) - buy;
   const profit = perTarget * q;
   const loss = perDown * q;
   const warnings = [];
   const price_checks = [
     ["buy_price", buy],
     ["target_price", tgt],
-    ["downside_price", down]
+    ["downside_price", down2]
   ].map(([field, price]) => ({ field, price, valid: isValidPrice(price, rules), nearest_valid: roundToStep(price, "nearest", rules) }));
-  for (const c2 of price_checks) if (!c2.valid) warnings.push(`${c2.field.replace("_", " ")} ${c2.price.toLocaleString("en-US")} isn't a valid market price; nearest is ${c2.nearest_valid.toLocaleString("en-US")}.`);
+  for (const c4 of price_checks) if (!c4.valid) warnings.push(`${c4.field.replace("_", " ")} ${c4.price.toLocaleString("en-US")} isn't a valid market price; nearest is ${c4.nearest_valid.toLocaleString("en-US")}.`);
   if (tgt <= buy) warnings.push("Target is not above the buy price.");
-  if (down >= buy) warnings.push("Downside exit is not below the buy price: that's not a downside scenario.");
+  if (down2 >= buy) warnings.push("Downside exit is not below the buy price: that's not a downside scenario.");
   if (perTarget <= 0 && tgt > buy) warnings.push("After the 5% tax the target sale loses money.");
   const risk_reward = loss < 0 && profit > 0 ? round2(profit / -loss) : null;
   const break_even_win_rate = loss < 0 && profit > 0 ? round4(-loss / (profit - loss)) : null;
@@ -11980,7 +12012,7 @@ function analyzeTrade(input, market = { latest_price: null, freshness: null }, r
     input: { ...input, quantity: q },
     investment,
     tax_at_target: transferTax(tgt, rules),
-    tax_at_downside: transferTax(down, rules),
+    tax_at_downside: transferTax(down2, rules),
     break_even_price: breakEvenPrice(buy, rules),
     profit_at_target: profit,
     loss_at_downside: loss,
@@ -12012,8 +12044,8 @@ function breakEvenPrice(buy, rules = DEFAULT_MARKET_RULES) {
   while (netAfterTax(p, rules) < buy) p = roundToStep(p + 1, "up", rules);
   return p;
 }
-var round2 = (n) => Math.round(n * 100) / 100;
-var round4 = (n) => Math.round(n * 1e4) / 1e4;
+var round2 = (n2) => Math.round(n2 * 100) / 100;
+var round4 = (n2) => Math.round(n2 * 1e4) / 1e4;
 
 // supabase/functions/_shared/fut/xilab/market/sources.ts
 var NONE = {
@@ -12091,33 +12123,33 @@ function assertUsable(source, use) {
 // supabase/functions/_shared/fut/xilab/shared/csv.ts
 function parseCsv(text2) {
   const rows = [];
-  let row2 = [];
+  let row3 = [];
   let field = "";
   let quoted = false;
   const s = text2.replace(/^﻿/, "");
   for (let i = 0; i < s.length; i++) {
-    const c2 = s[i];
+    const c4 = s[i];
     if (quoted) {
-      if (c2 === '"') {
+      if (c4 === '"') {
         if (s[i + 1] === '"') {
           field += '"';
           i++;
         } else quoted = false;
-      } else field += c2;
-    } else if (c2 === '"') quoted = true;
-    else if (c2 === ",") {
-      row2.push(field);
+      } else field += c4;
+    } else if (c4 === '"') quoted = true;
+    else if (c4 === ",") {
+      row3.push(field);
       field = "";
-    } else if (c2 === "\n" || c2 === "\r") {
-      if (c2 === "\r" && s[i + 1] === "\n") i++;
-      row2.push(field);
+    } else if (c4 === "\n" || c4 === "\r") {
+      if (c4 === "\r" && s[i + 1] === "\n") i++;
+      row3.push(field);
       field = "";
-      if (row2.some((f2) => f2 !== "")) rows.push(row2);
-      row2 = [];
-    } else field += c2;
+      if (row3.some((f2) => f2 !== "")) rows.push(row3);
+      row3 = [];
+    } else field += c4;
   }
-  row2.push(field);
-  if (row2.some((f2) => f2 !== "")) rows.push(row2);
+  row3.push(field);
+  if (row3.some((f2) => f2 !== "")) rows.push(row3);
   const [header, ...body] = rows;
   if (!header) return [];
   const keys = header.map((h) => h.trim());
@@ -12126,9 +12158,9 @@ function parseCsv(text2) {
 
 // supabase/functions/_shared/fut/xilab/market/capture.ts
 function captureDetailsFromRow(r2) {
-  const n = (v) => v === void 0 || v === null || v === "" || !Number.isInteger(Number(v)) || Number(v) < 0 ? void 0 : Number(v);
+  const n2 = (v) => v === void 0 || v === null || v === "" || !Number.isInteger(Number(v)) || Number(v) < 0 ? void 0 : Number(v);
   const pos = typeof r2.position === "string" && /^[A-Z]{2,3}$/.test(r2.position.trim()) ? r2.position.trim() : void 0;
-  const d = { rare_flag: n(r2.rare_flag), team_id: n(r2.team_id), league_id: n(r2.league_id), nation_id: n(r2.nation_id), position: pos };
+  const d = { rare_flag: n2(r2.rare_flag), team_id: n2(r2.team_id), league_id: n2(r2.league_id), nation_id: n2(r2.nation_id), position: pos };
   const kept = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== void 0));
   return Object.keys(kept).length ? kept : void 0;
 }
@@ -12237,7 +12269,7 @@ function compareInSquad(squad, card, rules, market) {
       chemistry_before: before,
       chemistry_after: p.total_after,
       chemistry_delta: p.total_after - before,
-      changes: p.diff.changes.map((c2) => ({ slot: c2.slot, name: c2.name_after ?? c2.name_before, delta: c2.delta, reasons: c2.reasons })),
+      changes: p.diff.changes.map((c4) => ({ slot: c4.slot, name: c4.name_after ?? c4.name_before, delta: c4.delta, reasons: c4.reasons })),
       fit_before: p.fit_before,
       fit_after: p.fit_after,
       fit_delta: p.fit_before === null || p.fit_after === null ? null : p.fit_after - p.fit_before
@@ -12334,7 +12366,7 @@ function cardUtility(card, profiles = {}) {
 }
 function comparableCards(card, pool, range = 2) {
   const r2 = card.rating ?? 0;
-  return pool.filter((c2) => c2.id !== card.id && c2.positions[0] === card.positions[0] && Math.abs((c2.rating ?? 0) - r2) <= range);
+  return pool.filter((c4) => c4.id !== card.id && c4.positions[0] === card.positions[0] && Math.abs((c4.rating ?? 0) - r2) <= range);
 }
 
 // supabase/functions/_shared/fut/xilab/market/service.ts
@@ -12362,11 +12394,11 @@ function withoutOne(sorted, skip) {
       }
     }
   }
-  const n = sorted.length - (at2 < 0 ? 0 : 1);
-  if (!n) return { n, median: null };
+  const n2 = sorted.length - (at2 < 0 ? 0 : 1);
+  if (!n2) return { n: n2, median: null };
   const el = (k) => sorted[at2 >= 0 && k >= at2 ? k + 1 : k];
-  const m = n >> 1;
-  return { n, median: n % 2 ? el(m) : (el(m - 1) + el(m)) / 2 };
+  const m = n2 >> 1;
+  return { n: n2, median: n2 % 2 ? el(m) : (el(m - 1) + el(m)) / 2 };
 }
 var LOOKBACK_H = 8 * 24;
 function createMarketService(deps) {
@@ -12386,13 +12418,13 @@ function createMarketService(deps) {
     return s && s.status === "enabled" && s.permissions.derived_analytics;
   });
   async function snapshot(owner, platform, as_of) {
-    const cache = deps.snapshots;
-    if (as_of !== void 0 || !cache) return buildSnapshot(owner, platform, as_of ?? now2());
-    return cache.remember(owner, `${platform}|${await cache.version()}`, () => buildSnapshot(owner, platform, now2()));
+    const cache3 = deps.snapshots;
+    if (as_of !== void 0 || !cache3) return buildSnapshot(owner, platform, as_of ?? now2());
+    return cache3.remember(owner, `${platform}|${await cache3.version()}`, () => buildSnapshot(owner, platform, now2()));
   }
   async function buildSnapshot(owner, platform, as_of) {
     const cards = await deps.cards.list(owner);
-    const byId = new Map(cards.map((c2) => [c2.id, c2]));
+    const byId = new Map(cards.map((c4) => [c4.id, c4]));
     const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 36e5) }));
     const series = toSeriesByCard(rows, platform, as_of);
     const members = await deps.memberships.list();
@@ -12415,16 +12447,16 @@ function createMarketService(deps) {
     if (hit) return hit;
     const own = /* @__PURE__ */ new Map();
     const latest = /* @__PURE__ */ new Map();
-    for (const c2 of snap.cards) {
-      const s = snap.series.get(c2.id);
+    for (const c4 of snap.cards) {
+      const s = snap.series.get(c4.id);
       if (!s || freshness(s, snap.as_of, rules).status !== "fresh") continue;
-      own.set(c2.id, Object.fromEntries(WINDOWS.map((w) => [w, change2(s, w)])));
-      latest.set(c2.id, s.at(-1).price);
+      own.set(c4.id, Object.fromEntries(WINDOWS.map((w) => [w, change2(s, w)])));
+      latest.set(c4.id, s.at(-1).price);
     }
     const keys = /* @__PURE__ */ new Map();
-    const keyOf3 = (c2) => {
-      let k = keys.get(c2.id);
-      if (!k) keys.set(c2.id, k = Object.fromEntries(PEER_BENCHMARKS.map((b) => [b, peerGroupKey(b, c2)])));
+    const keyOf3 = (c4) => {
+      let k = keys.get(c4.id);
+      if (!k) keys.set(c4.id, k = Object.fromEntries(PEER_BENCHMARKS.map((b) => [b, peerGroupKey(b, c4)])));
       return k;
     };
     const groups = /* @__PURE__ */ new Map();
@@ -12454,11 +12486,11 @@ function createMarketService(deps) {
       return g;
     };
     const sameSlot = /* @__PURE__ */ new Map();
-    for (const c2 of snap.cards) {
-      const price = latest.get(c2.id);
+    for (const c4 of snap.cards) {
+      const price = latest.get(c4.id);
       if (price === void 0) continue;
-      const k = `${c2.rating}|${c2.positions[0]}`;
-      (sameSlot.get(k) ?? sameSlot.set(k, []).get(k)).push({ id: c2.id, price });
+      const k = `${c4.rating}|${c4.positions[0]}`;
+      (sameSlot.get(k) ?? sameSlot.set(k, []).get(k)).push({ id: c4.id, price });
     }
     const peers = {
       changes(b, card) {
@@ -12482,8 +12514,8 @@ function createMarketService(deps) {
     const out = [];
     const peers = peersOf(snap);
     for (const b of PEER_BENCHMARKS) {
-      const pc = peers.changes(b, card);
-      out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc[w].value])), peers: pc["24h"].n });
+      const pc2 = peers.changes(b, card);
+      out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc2[w].value])), peers: pc2["24h"].n });
     }
     const m = snap.indexes.find((i) => i.basket_id === "market");
     const ms_ = snap.indexSeries.get("market") ?? [];
@@ -12502,9 +12534,9 @@ function createMarketService(deps) {
     return { series: s, fresh, rs, mom, mr, assessment, latest };
   }
   const getCard2 = (snap, id) => {
-    const c2 = snap.byId.get(id);
-    if (!c2) throw new MarketNotFoundError(`No card ${id}`);
-    return c2;
+    const c4 = snap.byId.get(id);
+    if (!c4) throw new MarketNotFoundError(`No card ${id}`);
+    return c4;
   };
   async function initBaskets(at2, opts = {}) {
     const cards = await deps.cards.catalogue();
@@ -12517,12 +12549,12 @@ function createMarketService(deps) {
   }
   function eaResolver(cards) {
     const byEa = /* @__PURE__ */ new Map();
-    for (const c2 of cards) if (c2.ea_item_id) byEa.set(c2.ea_item_id, c2);
-    return (ea, asset, rating) => {
+    for (const c4 of cards) if (c4.ea_item_id) byEa.set(c4.ea_item_id, c4);
+    return (ea, asset, rating2) => {
       const hit = byEa.get(ea);
-      if (hit && (rating === null || hit.rating === rating)) return hit.id;
+      if (hit && (rating2 === null || hit.rating === rating2)) return hit.id;
       const base = asset ? byEa.get(asset) : void 0;
-      return base && rating !== null && base.rating === rating ? base.id : null;
+      return base && rating2 !== null && base.rating === rating2 ? base.id : null;
     };
   }
   function unmatchedReason(u) {
@@ -12549,13 +12581,13 @@ function createMarketService(deps) {
   }
   function scan(snap) {
     const rank = { favorable_setup: 0, research_further: 1, overheated: 2, elevated_risk: 3, watch: 4, insufficient_evidence: 5 };
-    const items = snap.cards.filter((c2) => snap.series.has(c2.id)).map((c2) => {
-      const a = analyse(snap, c2);
+    const items = snap.cards.filter((c4) => snap.series.has(c4.id)).map((c4) => {
+      const a = analyse(snap, c4);
       return {
-        card_id: c2.id,
-        name: c2.name,
-        rating: c2.rating,
-        category: c2.category,
+        card_id: c4.id,
+        name: c4.name,
+        rating: c4.rating,
+        category: c4.category,
         platform: snap.platform,
         latest_price: a.latest,
         latest_observed_at: a.fresh.latest_observed_at,
@@ -12580,14 +12612,14 @@ function createMarketService(deps) {
     /** get_market_overview */
     async getMarketOverview(owner, opts = {}) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
-      const rows = snap.cards.flatMap((c2) => {
-        const s = snap.series.get(c2.id);
+      const rows = snap.cards.flatMap((c4) => {
+        const s = snap.series.get(c4.id);
         if (!s) return [];
         const f2 = freshness(s, snap.as_of, rules);
-        if (f2.status !== "fresh") return [{ c: c2, f: f2, rel: null, c24: null }];
+        if (f2.status !== "fresh") return [{ c: c4, f: f2, rel: null, c24: null }];
         const c24 = change2(s, "24h");
         const m = snap.indexes.find((i) => i.basket_id === "market")?.changes["24h"] ?? null;
-        return [{ c: c2, f: f2, c24, rel: c24 === null || m === null ? null : c24 - m }];
+        return [{ c: c4, f: f2, c24, rel: c24 === null || m === null ? null : c24 - m }];
       });
       const ranked = rows.filter((r2) => r2.rel !== null).sort((a, b) => b.rel - a.rel);
       const mover = (r2) => ({ card_id: r2.c.id, name: r2.c.name, rating: r2.c.rating, change_24h: round(r2.c24), vs_market_pp: round(r2.rel), latest_observed_at: r2.f.latest_observed_at });
@@ -12682,15 +12714,15 @@ function createMarketService(deps) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
       const card = getCard2(snap, card_id);
       const others = opts.others?.length ? opts.others.map((id) => getCard2(snap, id)) : comparableCards(card, snap.cards);
-      const row2 = (c2) => {
-        const s = snap.series.get(c2.id) ?? [];
+      const row3 = (c4) => {
+        const s = snap.series.get(c4.id) ?? [];
         const f2 = freshness(s, snap.as_of, rules);
-        const u = cardUtility(c2);
+        const u = cardUtility(c4);
         const price = f2.status === "fresh" ? s.at(-1).price : null;
         const fit = u.gameplay.best?.score ?? null;
-        return { card_id: c2.id, name: c2.name, rating: c2.rating, best_fit: u.gameplay.best, versatility: u.gameplay.versatility, latest_price: price, freshness: f2.status, coins_per_fit_point: price !== null && fit ? Math.round(price / fit) : null };
+        return { card_id: c4.id, name: c4.name, rating: c4.rating, best_fit: u.gameplay.best, versatility: u.gameplay.versatility, latest_price: price, freshness: f2.status, coins_per_fit_point: price !== null && fit ? Math.round(price / fit) : null };
       };
-      return { subject: row2(card), others: others.map(row2), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
+      return { subject: row3(card), others: others.map(row3), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
     },
     /** analyze_trade_thesis */
     async analyzeTradeThesis(owner, input, opts = {}) {
@@ -12761,7 +12793,7 @@ function createMarketService(deps) {
       assertUsable(source, "storage");
       const cards = await deps.cards.list(owner);
       const resolveEaItem = eaResolver(cards);
-      const res = parsePriceImport(text2, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c2) => c2.id)), rules, resolveEaItem });
+      const res = parsePriceImport(text2, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c4) => c4.id)), rules, resolveEaItem });
       const rejected = [...res.rejected];
       let held = 0;
       if (res.unmatched.length && deps.holds) held = (await deps.holds.hold(owner, res.unmatched)).held;
@@ -12784,7 +12816,7 @@ function createMarketService(deps) {
     /** Link every held capture of one EA item to a card you chose (for cards that don't carry EA's item id). */
     async linkHeldCapture(owner, ea_item_id, card_id) {
       if (!deps.holds) return { linked: 0 };
-      const card = (await deps.cards.list(owner)).find((c2) => c2.id === card_id);
+      const card = (await deps.cards.list(owner)).find((c4) => c4.id === card_id);
       if (!card) throw new MarketNotFoundError(`Card ${card_id} isn't one of yours`);
       const held = (await deps.holds.list(owner)).filter((h) => h.ea_item_id === ea_item_id);
       if (held.some((h) => h.rating !== null && h.rating !== card.rating)) throw new Error(`EA item ${ea_item_id} is rated ${held.find((h) => h.rating !== null).rating}; ${card.name} is ${card.rating}. Pick the matching card.`);
@@ -13001,10 +13033,10 @@ var PgPriceStore = class {
     }
     const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
     const catalogueIds = /* @__PURE__ */ new Map();
-    for (const row2 of await this.catalogue()) {
-      const key = eaKey(row2.source_card_key);
-      if (key === null || byEa.has(key) || wanted && !wanted.has(String(row2.id))) continue;
-      catalogueIds.set(key, String(row2.id));
+    for (const row3 of await this.catalogue()) {
+      const key = eaKey(row3.source_card_key);
+      if (key === null || byEa.has(key) || wanted && !wanted.has(String(row3.id))) continue;
+      catalogueIds.set(key, String(row3.id));
     }
     const out = [];
     const push = (quote, cardId) => out.push({
@@ -13160,21 +13192,21 @@ var PgCaptureHoldStore = class {
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
-var categoryOf = (c2) => {
-  if (c2.is_icon) return "icon";
-  if (c2.is_hero) return "hero";
-  const v = (c2.version ?? "").toLowerCase();
+var categoryOf = (c4) => {
+  if (c4.is_icon) return "icon";
+  if (c4.is_hero) return "hero";
+  const v = (c4.version ?? "").toLowerCase();
   if (!v || v === "base" || v.includes("gold") || v.includes("rare")) return "base";
   if (v.includes("evo")) return "evolution";
   return "promo";
 };
-var toMarketCard = (c2) => ({
-  ...toWorkspaceCard(c2),
-  rating: c2.overall,
-  category: categoryOf(c2),
-  version: c2.version ?? void 0,
-  tradeable: c2.tradeable ?? true,
-  ...c2.ea_item_id ? { ea_item_id: c2.ea_item_id } : {}
+var toMarketCard = (c4) => ({
+  ...toWorkspaceCard(c4),
+  rating: c4.overall,
+  category: categoryOf(c4),
+  version: c4.version ?? void 0,
+  tradeable: c4.tradeable ?? true,
+  ...c4.ea_item_id ? { ea_item_id: c4.ea_item_id } : {}
 });
 var PgMarketCardSource = class {
   constructor(db, rows = trackedCatalogue(db)) {
@@ -13183,8 +13215,8 @@ var PgMarketCardSource = class {
   }
   async list(owner) {
     const mine = (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
-    const have = new Set(mine.flatMap((c2) => c2.ea_item_id ? [c2.ea_item_id] : []));
-    return [...mine, ...(await this.catalogue()).filter((c2) => !c2.ea_item_id || !have.has(c2.ea_item_id))];
+    const have = new Set(mine.flatMap((c4) => c4.ea_item_id ? [c4.ea_item_id] : []));
+    return [...mine, ...(await this.catalogue()).filter((c4) => !c4.ea_item_id || !have.has(c4.ea_item_id))];
   }
   async catalogue() {
     return (await this.rows()).map((r2) => toMarketCard(catalogueCard(r2)));
@@ -13212,12 +13244,12 @@ async function marketRules(db) {
 }
 async function marketFor(db, now2) {
   const load = () => Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
-  const cache = cacheOn(db) && !now2;
-  const [rules, sources, chemistry] = cache ? await remember(db, "config", MARKET_CACHE_TTL.config, load) : await load();
+  const cache3 = cacheOn(db) && !now2;
+  const [rules, sources, chemistry] = cache3 ? await remember(db, "config", MARKET_CACHE_TTL.config, load) : await load();
   const catalogue2 = trackedCatalogue(db);
   const futgg = sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled");
   return createMarketService({
-    prices: new PgPriceStore(db, futgg, catalogue2, cache ? sharedFutggQuotes(db, catalogue2) : void 0),
+    prices: new PgPriceStore(db, futgg, catalogue2, cache3 ? sharedFutggQuotes(db, catalogue2) : void 0),
     memberships: new PgMembershipStore(db),
     watchlists: new PgWatchlistStore(db),
     cards: new PgMarketCardSource(db, catalogue2),
@@ -13226,7 +13258,7 @@ async function marketFor(db, now2) {
     rules,
     chemistry,
     ...now2 ? { now: now2 } : {},
-    ...cache ? { snapshots: snapshotCache(db) } : {}
+    ...cache3 ? { snapshots: snapshotCache(db) } : {}
   });
 }
 function marketCardId(v) {
@@ -13246,14 +13278,14 @@ var fail3 = (error) => {
 var MAX_PULLS = 1e3;
 var EA_TAX = 0.05;
 function bandValue(bands, lo, hi, kinds) {
-  let n = 0, low = 0, high = 0;
-  for (const [o, k, c2, , med, mean4] of bands) {
-    if (o < lo || o > hi || !kinds.includes(k) || c2 <= 0) continue;
-    n += c2;
-    low += med * c2;
-    high += mean4 * c2;
+  let n2 = 0, low = 0, high = 0;
+  for (const [o, k, c4, , med, mean4] of bands) {
+    if (o < lo || o > hi || !kinds.includes(k) || c4 <= 0) continue;
+    n2 += c4;
+    low += med * c4;
+    high += mean4 * c4;
   }
-  return n ? { low: low / n, high: high / n, cards: n } : null;
+  return n2 ? { low: low / n2, high: high / n2, cards: n2 } : null;
 }
 var QUALITY = { gold: [75, 99], silver: [65, 74], bronze: [45, 64] };
 function qualityOf(label) {
@@ -13330,10 +13362,10 @@ function verdictFor2(p, v) {
     return v.lines.length ? { verdict: "no_prices", ratio: null, why: "There aren't enough FUT.GG prices for the cards in this pack's odds yet." } : { verdict: "no_odds", ratio: null, why: "The helper hasn't seen this pack's odds. Open the pack's odds (Pack Probability) in the Web App Store." };
   }
   if (!p.coins) return { verdict: "points_only", ratio: null, why: p.points ? "FC Points only. Compare value per 100 points with other points packs." : "No coin price in the store." };
-  const net = p.untradeable ? 1 : 1 - EA_TAX;
-  const typical = v.ev_low * net / p.coins, withLuck = v.ev_high * net / p.coins;
-  const pct6 = (x) => `${Math.round(x * 100)}%`;
-  const both = `about ${pct6(typical)} of the price in a typical pack, ${pct6(withLuck)} on average with the big pulls`;
+  const net2 = p.untradeable ? 1 : 1 - EA_TAX;
+  const typical = v.ev_low * net2 / p.coins, withLuck = v.ev_high * net2 / p.coins;
+  const pct7 = (x) => `${Math.round(x * 100)}%`;
+  const both = `about ${pct7(typical)} of the price in a typical pack, ${pct7(withLuck)} on average with the big pulls`;
   if (p.untradeable) {
     return typical >= 0.75 ? { verdict: "only_for_fodder", ratio: typical, why: `Untradeable, so you can't sell what you pull. If you'd otherwise buy these cards for SBCs, they're worth ${both}.` } : { verdict: "skip", ratio: typical, why: `Untradeable, and even as SBC fodder the cards are worth ${both}.` };
   }
@@ -13558,20 +13590,20 @@ async function pullSummary(db, platform, pulls, packs) {
 var EA_TAX2 = 0.05;
 var quality = (r2) => r2 >= 75 ? "gold" : r2 >= 65 ? "silver" : "bronze";
 var QUALITY_RANK = { bronze: 0, silver: 1, gold: 2 };
-function rarityOf(c2) {
-  const v = (c2.version ?? "").toLowerCase().trim();
+function rarityOf(c4) {
+  const v = (c4.version ?? "").toLowerCase().trim();
   if (/team of the week|\btotw\b|in-?form|rareflag 3\)/.test(v)) return ["totw", "special", "rare"];
-  if (c2.is_icon || c2.is_hero || v && !/^(common|rare|non-?rare)$/.test(v)) return ["special", "rare"];
+  if (c4.is_icon || c4.is_hero || v && !/^(common|rare|non-?rare)$/.test(v)) return ["special", "rare"];
   if (v === "rare") return ["rare"];
   return ["common"];
 }
 var norm5 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-var plays = (c2, position) => c2.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+var plays = (c4, position) => c4.positions.some((p) => p.toUpperCase() === position.toUpperCase());
 function teamRating(ratings) {
   if (!ratings.length) return 0;
-  const n = 11, sum = ratings.reduce((a, b) => a + b, 0), avg2 = sum / n;
+  const n2 = 11, sum = ratings.reduce((a, b) => a + b, 0), avg2 = sum / n2;
   const excess = ratings.reduce((a, r2) => a + Math.max(0, r2 - avg2), 0);
-  return Math.floor(Math.round((sum + excess) / n * 100) / 100);
+  return Math.floor(Math.round((sum + excess) / n2 * 100) / 100);
 }
 var OPS = [[/\b(min(imum)?\.?|at least|or more|\+)\b|\+/i, "min"], [/\b(max(imum)?\.?|at most|or fewer|or less)\b/i, "max"], [/\b(exactly|exact)\b/i, "exact"]];
 var opOf = (s, fallback = "min") => OPS.find(([re]) => re.test(s))?.[1] ?? fallback;
@@ -13581,30 +13613,30 @@ var RARITY_WORDS = [[/team of the week|\btotw\b|in-?form/i, "totw"], [/\bspecial
 function parseRequirementLine(raw) {
   const line = raw.replace(/[•·▪●*–-]\s+/g, " ").replace(/\s+/g, " ").trim();
   if (!line) return null;
-  const n = numbers(line);
+  const n2 = numbers(line);
   const op = opOf(line);
-  if (/players? in (the )?squad|squad size|^#? ?(of )?players\b.*\d+$|^(exactly|min(imum)?\.?|max(imum)?\.?)\s*\d+\s*players?$/i.test(line) && n.length && !groupOf(line) && !/rated|ovr|rating/i.test(line)) return { kind: "players", op: opOf(line, "exact"), value: n.at(-1) };
-  if (/\b(team|squad) rating\b/i.test(line) && n.length) return { kind: "team_rating", op, value: n.at(-1) };
-  if (/chem(istry)? (points )?per player|player chem/i.test(line) && n.length) return { kind: "player_chemistry", op, value: n.at(-1) };
-  if (/\b(team |total |squad )?chem(istry)?\b/i.test(line) && n.length) return { kind: "chemistry", op, value: n.at(-1) };
+  if (/players? in (the )?squad|squad size|^#? ?(of )?players\b.*\d+$|^(exactly|min(imum)?\.?|max(imum)?\.?)\s*\d+\s*players?$/i.test(line) && n2.length && !groupOf(line) && !/rated|ovr|rating/i.test(line)) return { kind: "players", op: opOf(line, "exact"), value: n2.at(-1) };
+  if (/\b(team|squad) rating\b/i.test(line) && n2.length) return { kind: "team_rating", op, value: n2.at(-1) };
+  if (/chem(istry)? (points )?per player|player chem/i.test(line) && n2.length) return { kind: "player_chemistry", op, value: n2.at(-1) };
+  if (/\b(team |total |squad )?chem(istry)?\b/i.test(line) && n2.length) return { kind: "chemistry", op, value: n2.at(-1) };
   const rar = RARITY_WORDS.find(([re]) => re.test(line))?.[1];
-  if (rar) return { kind: "rarity", op, value: rar, count: n.length ? n[0] : 1 };
+  if (rar) return { kind: "rarity", op, value: rar, count: n2.length ? n2[0] : 1 };
   const q = /\bgold\b/i.test(line) ? "gold" : /\bsilver\b/i.test(line) ? "silver" : /\bbronze\b/i.test(line) ? "bronze" : null;
   if (q) {
-    return n.length ? { kind: "quality", op, value: q, count: n[0] } : { kind: "quality", op, value: q };
+    return n2.length ? { kind: "quality", op, value: q, count: n2[0] } : { kind: "quality", op, value: q };
   }
-  if (/\b(ovr|overall|rated|rating)\b/i.test(line) && n.length) {
-    if (n.length >= 2) return { kind: "rating", op: /\+|or more|min/i.test(line) ? "min" : op, value: Math.max(n[0], n[1]), count: Math.min(n[0], n[1]) };
-    return { kind: "rating", op, value: n[0] };
+  if (/\b(ovr|overall|rated|rating)\b/i.test(line) && n2.length) {
+    if (n2.length >= 2) return { kind: "rating", op: /\+|or more|min/i.test(line) ? "min" : op, value: Math.max(n2[0], n2[1]), count: Math.min(n2[0], n2[1]) };
+    return { kind: "rating", op, value: n2[0] };
   }
   const g = groupOf(line);
-  const named = /^[^:]+:\s*(?!(min|max|exactly)\b|\d)[a-z]/i.test(line) && !/\bsame\b/i.test(line);
-  if (g && /\bsame\b/i.test(line) && n.length) return { kind: "same", of: g, op, value: n.at(-1) };
-  if (g && n.length && !named && !/\bfrom\b/i.test(line)) return { kind: "distinct", of: g, op, value: n.at(-1) };
+  const named2 = /^[^:]+:\s*(?!(min|max|exactly)\b|\d)[a-z]/i.test(line) && !/\bsame\b/i.test(line);
+  if (g && /\bsame\b/i.test(line) && n2.length) return { kind: "same", of: g, op, value: n2.at(-1) };
+  if (g && n2.length && !named2 && !/\bfrom\b/i.test(line)) return { kind: "distinct", of: g, op, value: n2.at(-1) };
   const from = /from:?\s*(.+)$/i.exec(line) ?? /^([^:]+):\s*(?:min|max|exactly)/i.exec(line) ?? /^(?:league|nation|club|country\/region):\s*([^,]+?)(?:,|\s+(?:min|max|exactly)|$)/i.exec(line);
   if (from) {
     const names = from[1].replace(/\b(min(imum)?\.?|max(imum)?\.?|exactly)\b.*$/i, "").split(/\s*(?:,|\bor\b|\/|\|)\s*/i).map((s) => s.replace(/\d+\s*players?/i, "").replace(/[:.]+$/, "").trim()).filter((s) => s && !/^\d+$/.test(s)).slice(0, 10);
-    if (names.length) return { kind: "from", of: /^league/i.test(line) ? "league" : /^(nation|country)/i.test(line) ? "nation" : /^club/i.test(line) ? "club" : "any", names, op, count: n.length ? n[0] : 1 };
+    if (names.length) return { kind: "from", of: /^league/i.test(line) ? "league" : /^(nation|country)/i.test(line) ? "nation" : /^club/i.test(line) ? "club" : "any", names, op, count: n2.length ? n2[0] : 1 };
   }
   return null;
 }
@@ -13736,18 +13768,18 @@ function cleanRequirements(raw) {
         break;
       }
       case "rating": {
-        const v = int2(r2.value, 1, 99), c2 = r2.count === void 0 || r2.count === null ? void 0 : int2(r2.count, 0, 11);
-        if (v !== null && c2 !== null) ok = { kind: "rating", op, value: v, ...c2 !== void 0 ? { count: c2 } : {} };
+        const v = int2(r2.value, 1, 99), c4 = r2.count === void 0 || r2.count === null ? void 0 : int2(r2.count, 0, 11);
+        if (v !== null && c4 !== null) ok = { kind: "rating", op, value: v, ...c4 !== void 0 ? { count: c4 } : {} };
         break;
       }
       case "quality": {
-        const c2 = r2.count === void 0 || r2.count === null ? void 0 : int2(r2.count, 0, 11);
-        if (["bronze", "silver", "gold"].includes(r2.value) && c2 !== null) ok = { kind: "quality", op, value: r2.value, ...c2 !== void 0 ? { count: c2 } : {} };
+        const c4 = r2.count === void 0 || r2.count === null ? void 0 : int2(r2.count, 0, 11);
+        if (["bronze", "silver", "gold"].includes(r2.value) && c4 !== null) ok = { kind: "quality", op, value: r2.value, ...c4 !== void 0 ? { count: c4 } : {} };
         break;
       }
       case "rarity": {
-        const c2 = int2(r2.count, 0, 11);
-        if (["common", "rare", "special", "totw"].includes(r2.value) && c2 !== null) ok = { kind: "rarity", op, value: r2.value, count: c2 };
+        const c4 = int2(r2.count, 0, 11);
+        if (["common", "rare", "special", "totw"].includes(r2.value) && c4 !== null) ok = { kind: "rarity", op, value: r2.value, count: c4 };
         break;
       }
       case "same": {
@@ -13761,10 +13793,10 @@ function cleanRequirements(raw) {
         break;
       }
       case "from": {
-        const c2 = int2(r2.count, 0, 11);
+        const c4 = int2(r2.count, 0, 11);
         const names = Array.isArray(r2.names) ? r2.names.filter((s) => typeof s === "string" && !!s.trim()).map((s) => s.trim().slice(0, 60)).slice(0, 10) : [];
         const of = r2.of === "any" ? "any" : group;
-        if (of && c2 !== null && names.length) ok = { kind: "from", of, names, op, count: c2 };
+        if (of && c4 !== null && names.length) ok = { kind: "from", of, names, op, count: c4 };
         break;
       }
     }
@@ -13807,15 +13839,15 @@ function chemistryOf(formation, slots, rules) {
   return { total: r2.total, players: new Map(r2.players.map((p) => [p.slot, p.chemistry])) };
 }
 function checkSquad(formation, slots, reqs, rules) {
-  const cards = slots.map((s) => s.card).filter((c2) => !!c2);
-  const ratings = cards.map((c2) => c2.rating);
+  const cards = slots.map((s) => s.card).filter((c4) => !!c4);
+  const ratings = cards.map((c4) => c4.rating);
   const tr = teamRating(ratings);
   const needChem = reqs.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry");
   const chem = needChem ? chemistryOf(formation, slots, rules) : { total: 0, players: /* @__PURE__ */ new Map() };
   const groupCounts = (g) => {
     const m = /* @__PURE__ */ new Map();
-    for (const c2 of cards) {
-      const k = c2[g];
+    for (const c4 of cards) {
+      const k = c4[g];
       if (k) m.set(norm5(k), (m.get(norm5(k)) ?? 0) + 1);
     }
     return m;
@@ -13838,7 +13870,7 @@ function checkSquad(formation, slots, reqs, rules) {
       case "player_chemistry": {
         const worst = slots.filter((s) => s.card).map((s) => chem.players.get(s.slot) ?? 0);
         actual = worst.length ? Math.min(...worst) : 0;
-        gap = worst.reduce((a, c2) => a + cmp(r2.op, c2, r2.value), 0);
+        gap = worst.reduce((a, c4) => a + cmp(r2.op, c4, r2.value), 0);
         break;
       }
       case "rating": {
@@ -13848,30 +13880,30 @@ function checkSquad(formation, slots, reqs, rules) {
           actual = bad.length ? `${bad.length} off` : "all";
           gap = bad.reduce((a, x) => a + 1 + Math.abs(x - r2.value) / 10, 0);
         } else {
-          const n = ratings.filter((x) => r2.op === "max" ? x <= r2.value : r2.op === "exact" ? x === r2.value : x >= r2.value).length;
-          actual = n;
-          gap = Math.max(0, r2.count - n);
+          const n2 = ratings.filter((x) => r2.op === "max" ? x <= r2.value : r2.op === "exact" ? x === r2.value : x >= r2.value).length;
+          actual = n2;
+          gap = Math.max(0, r2.count - n2);
         }
         break;
       }
       case "quality": {
         const rank = QUALITY_RANK[r2.value];
-        const hit = (c2) => r2.op === "min" ? QUALITY_RANK[quality(c2.rating)] >= rank : r2.op === "max" ? QUALITY_RANK[quality(c2.rating)] <= rank : quality(c2.rating) === r2.value;
+        const hit = (c4) => r2.op === "min" ? QUALITY_RANK[quality(c4.rating)] >= rank : r2.op === "max" ? QUALITY_RANK[quality(c4.rating)] <= rank : quality(c4.rating) === r2.value;
         if (r2.count === void 0) {
-          const bad = cards.filter((c2) => !hit(c2)).length;
+          const bad = cards.filter((c4) => !hit(c4)).length;
           actual = bad ? `${bad} off` : "all";
           gap = bad;
         } else {
-          const n = cards.filter((c2) => quality(c2.rating) === r2.value || r2.op === "min" && QUALITY_RANK[quality(c2.rating)] >= rank).length;
-          actual = n;
-          gap = r2.op === "max" ? Math.max(0, n - r2.count) : Math.max(0, r2.count - n);
+          const n2 = cards.filter((c4) => quality(c4.rating) === r2.value || r2.op === "min" && QUALITY_RANK[quality(c4.rating)] >= rank).length;
+          actual = n2;
+          gap = r2.op === "max" ? Math.max(0, n2 - r2.count) : Math.max(0, r2.count - n2);
         }
         break;
       }
       case "rarity": {
-        const n = cards.filter((c2) => rarityOf(c2).includes(r2.value)).length;
-        actual = n;
-        gap = cmp(r2.op, n, r2.count);
+        const n2 = cards.filter((c4) => rarityOf(c4).includes(r2.value)).length;
+        actual = n2;
+        gap = cmp(r2.op, n2, r2.count);
         break;
       }
       case "same": {
@@ -13881,16 +13913,16 @@ function checkSquad(formation, slots, reqs, rules) {
         break;
       }
       case "distinct": {
-        const n = groupCounts(r2.of).size;
-        actual = n;
-        gap = cmp(r2.op, n, r2.value);
+        const n2 = groupCounts(r2.of).size;
+        actual = n2;
+        gap = cmp(r2.op, n2, r2.value);
         break;
       }
       case "from": {
         const want = new Set(r2.names.map(norm5));
-        const n = cards.filter((c2) => (r2.of === "any" ? [c2.league, c2.nation, c2.club] : [c2[r2.of]]).some((x) => x && want.has(norm5(x)))).length;
-        actual = n;
-        gap = cmp(r2.op, n, r2.count);
+        const n2 = cards.filter((c4) => (r2.of === "any" ? [c4.league, c4.nation, c4.club] : [c4[r2.of]]).some((x) => x && want.has(norm5(x)))).length;
+        actual = n2;
+        gap = cmp(r2.op, n2, r2.count);
         break;
       }
     }
@@ -13902,12 +13934,12 @@ function checkSquad(formation, slots, reqs, rules) {
   }
   return { checks, team_rating: tr, chemistry: chem.total };
 }
-function useCost(c2) {
-  const guess = c2.rating >= 75 ? 200 + Math.max(0, c2.rating - 80) ** 2 * 150 : 150;
-  const p = c2.price ?? guess;
-  if (c2.source === "buy") return p;
-  if (c2.source === "spare") return Math.round(p * 0.05) + 1;
-  return c2.untradeable ? Math.round(p * 0.25) + 5 : Math.floor(p * (1 - EA_TAX2)) + 10;
+function useCost(c4) {
+  const guess = c4.rating >= 75 ? 200 + Math.max(0, c4.rating - 80) ** 2 * 150 : 150;
+  const p = c4.price ?? guess;
+  if (c4.source === "buy") return p;
+  if (c4.source === "spare") return Math.round(p * 0.05) + 1;
+  return c4.untradeable ? Math.round(p * 0.25) + 5 : Math.floor(p * (1 - EA_TAX2)) + 10;
 }
 function rng(seed) {
   let s = seed >>> 0 || 1;
@@ -13921,41 +13953,41 @@ function rng(seed) {
 function shortlist(pool, reqs, perRating = 12, cap = 800) {
   const byCost = [...pool].sort((a, b) => useCost(a) - useCost(b) || b.rating - a.rating);
   const keep = /* @__PURE__ */ new Map();
-  const add = (c2) => {
-    if (keep.size < cap) keep.set(c2.id, c2);
+  const add = (c4) => {
+    if (keep.size < cap) keep.set(c4.id, c4);
   };
-  for (const c2 of byCost) if ((c2.source === "spare" || c2.source === "owned" && c2.untradeable) && keep.size < 350) add(c2);
+  for (const c4 of byCost) if ((c4.source === "spare" || c4.source === "owned" && c4.untradeable) && keep.size < 350) add(c4);
   const chem = reqs.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry");
   const perR = /* @__PURE__ */ new Map();
-  for (const c2 of byCost) {
-    if (keep.has(c2.id)) continue;
-    const key = `${c2.source === "buy" ? "b" : "o"}|${c2.rating}|${chem ? c2.positions[0] ?? "" : ""}`;
-    const n = perR.get(key) ?? 0;
-    if (n < (chem ? 3 : perRating)) {
-      perR.set(key, n + 1);
-      add(c2);
+  for (const c4 of byCost) {
+    if (keep.has(c4.id)) continue;
+    const key = `${c4.source === "buy" ? "b" : "o"}|${c4.rating}|${chem ? c4.positions[0] ?? "" : ""}`;
+    const n2 = perR.get(key) ?? 0;
+    if (n2 < (chem ? 3 : perRating)) {
+      perR.set(key, n2 + 1);
+      add(c4);
     }
   }
   for (const r2 of reqs) {
     let test = null;
     if (r2.kind === "from") {
       const want = new Set(r2.names.map(norm5));
-      test = (c2) => (r2.of === "any" ? [c2.league, c2.nation, c2.club] : [c2[r2.of]]).some((x) => !!x && want.has(norm5(x)));
+      test = (c4) => (r2.of === "any" ? [c4.league, c4.nation, c4.club] : [c4[r2.of]]).some((x) => !!x && want.has(norm5(x)));
     }
-    if (r2.kind === "rarity") test = (c2) => rarityOf(c2).includes(r2.value);
-    if (r2.kind === "quality" && r2.count !== void 0) test = (c2) => quality(c2.rating) === r2.value;
+    if (r2.kind === "rarity") test = (c4) => rarityOf(c4).includes(r2.value);
+    if (r2.kind === "quality" && r2.count !== void 0) test = (c4) => quality(c4.rating) === r2.value;
     if (test) {
-      let n = 0;
-      for (const c2 of byCost) if (test(c2) && n++ < 40) add(c2);
+      let n2 = 0;
+      for (const c4 of byCost) if (test(c4) && n2++ < 40) add(c4);
     }
   }
   if (reqs.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry" || r2.kind === "same" && r2.op !== "max")) {
     for (const g of ["league", "nation", "club"]) {
       const counts = /* @__PURE__ */ new Map();
-      for (const c2 of byCost) if (c2[g]) counts.set(c2[g], (counts.get(c2[g]) ?? 0) + 1);
+      for (const c4 of byCost) if (c4[g]) counts.set(c4[g], (counts.get(c4[g]) ?? 0) + 1);
       for (const [k] of [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)) {
-        let n = 0;
-        for (const c2 of byCost) if (c2[g] === k && n++ < 25) add(c2);
+        let n2 = 0;
+        for (const c4 of byCost) if (c4[g] === k && n2++ < 25) add(c4);
       }
     }
   }
@@ -13966,22 +13998,22 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
   if (!layout) throw new Error(`Unknown formation "${formation}"`);
   const size = reqs.find((r2) => r2.kind === "players")?.value ?? 11;
   const exclude = new Set(opts.exclude ?? []);
-  const pool = poolIn.filter((c2) => !exclude.has(c2.id) && (c2.source !== "buy" || opts.buy !== false && c2.price !== null && c2.price > 0) && (c2.source === "buy" || opts.use_tradeables !== false || c2.untradeable || c2.source === "spare") && (c2.source === "buy" || !opts.protect_from || c2.rating < opts.protect_from));
+  const pool = poolIn.filter((c4) => !exclude.has(c4.id) && (c4.source !== "buy" || opts.buy !== false && c4.price !== null && c4.price > 0) && (c4.source === "buy" || opts.use_tradeables !== false || c4.untradeable || c4.source === "spare") && (c4.source === "buy" || !opts.protect_from || c4.rating < opts.protect_from));
   const cands = shortlist(pool, reqs);
   const chemMatters = reqs.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry");
   const slotsFor = layout.slice(0, Math.min(size, layout.length));
   const W = 1e6;
   const value = (s) => {
     const { checks: checks2 } = checkSquad(formation, s, reqs, rules);
-    const gap = checks2.reduce((a, c2) => a + c2.gap, 0);
+    const gap = checks2.reduce((a, c4) => a + c4.gap, 0);
     return gap * W + s.reduce((a, x) => a + (x.card ? useCost(x.card) : W), 0);
   };
   const random = rng(opts.seed ?? 27);
-  const fits = (c2, position) => !chemMatters || plays(c2, position);
-  const perPlayer = (c2) => reqs.every((r2) => {
-    if (r2.kind === "rating" && r2.count === void 0) return r2.op === "min" ? c2.rating >= r2.value : r2.op === "max" ? c2.rating <= r2.value : c2.rating === r2.value;
+  const fits = (c4, position) => !chemMatters || plays(c4, position);
+  const perPlayer = (c4) => reqs.every((r2) => {
+    if (r2.kind === "rating" && r2.count === void 0) return r2.op === "min" ? c4.rating >= r2.value : r2.op === "max" ? c4.rating <= r2.value : c4.rating === r2.value;
     if (r2.kind === "quality" && r2.count === void 0) {
-      const a = QUALITY_RANK[quality(c2.rating)], b = QUALITY_RANK[r2.value];
+      const a = QUALITY_RANK[quality(c4.rating)], b = QUALITY_RANK[r2.value];
       return r2.op === "min" ? a >= b : r2.op === "max" ? a <= b : a === b;
     }
     return true;
@@ -13996,7 +14028,7 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
       return useCost(a) + da - (useCost(b) + db) + (variant ? (random() - 0.5) * 400 * variant : 0);
     });
     for (const s of out) {
-      const pick = sorted.find((c2) => !used.has(norm5(c2.name)) && fits(c2, s.position));
+      const pick = sorted.find((c4) => !used.has(norm5(c4.name)) && fits(c4, s.position));
       if (pick) {
         s.card = pick;
         used.add(norm5(pick.name));
@@ -14010,9 +14042,9 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
       let changed = false;
       for (let i = 0; i < cur.length; i++) {
         const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm5(s.card.name)));
-        for (const c2 of cands) {
-          if (used.has(norm5(c2.name)) || c2.id === cur[i].card?.id || !fits(c2, cur[i].position)) continue;
-          const next = cur.map((s, j) => j === i ? { ...s, card: c2 } : s);
+        for (const c4 of cands) {
+          if (used.has(norm5(c4.name)) || c4.id === cur[i].card?.id || !fits(c4, cur[i].position)) continue;
+          const next = cur.map((s, j) => j === i ? { ...s, card: c4 } : s);
           const v = value(next);
           if (v < best) {
             best = v;
@@ -14042,13 +14074,13 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
     if (r2.value < winner.value) winner = r2;
   }
   const { checks, team_rating, chemistry } = checkSquad(formation, winner.slots, reqs, rules);
-  const cards = winner.slots.map((s) => s.card).filter((c2) => !!c2);
-  const buy_cost = cards.filter((c2) => c2.source === "buy").reduce((a, c2) => a + (c2.price ?? 0), 0);
-  const tradeable_value = cards.filter((c2) => c2.source === "owned" && !c2.untradeable).reduce((a, c2) => a + Math.floor((c2.price ?? 0) * (1 - EA_TAX2)), 0);
-  const feasible = checks.every((c2) => c2.ok);
+  const cards = winner.slots.map((s) => s.card).filter((c4) => !!c4);
+  const buy_cost = cards.filter((c4) => c4.source === "buy").reduce((a, c4) => a + (c4.price ?? 0), 0);
+  const tradeable_value = cards.filter((c4) => c4.source === "owned" && !c4.untradeable).reduce((a, c4) => a + Math.floor((c4.price ?? 0) * (1 - EA_TAX2)), 0);
+  const feasible = checks.every((c4) => c4.ok);
   const notes = [];
   if (!feasible) notes.push(opts.buy === false ? "Your club can't complete this on its own. Allow buying cards to see what's missing." : "No squad found that meets every requirement from your club and the cheapest market cards. Check the requirements, or try again after the next price refresh.");
-  if (cards.some((c2) => c2.price === null)) notes.push("Some club cards have no FUT.GG price, so their value is a guess from their rating.");
+  if (cards.some((c4) => c4.price === null)) notes.push("Some club cards have no FUT.GG price, so their value is a guess from their rating.");
   notes.push("Team rating and chemistry are GafferBot's estimates. EA's own numbers show when you build it in the Web App.");
   return {
     formation,
@@ -14061,22 +14093,22 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
     tradeable_value,
     total_cost: buy_cost + tradeable_value,
     counts: {
-      spare: cards.filter((c2) => c2.source === "spare").length,
-      untradeable: cards.filter((c2) => c2.source === "owned" && c2.untradeable).length,
-      tradeable: cards.filter((c2) => c2.source === "owned" && !c2.untradeable).length,
-      buy: cards.filter((c2) => c2.source === "buy").length
+      spare: cards.filter((c4) => c4.source === "spare").length,
+      untradeable: cards.filter((c4) => c4.source === "owned" && c4.untradeable).length,
+      tradeable: cards.filter((c4) => c4.source === "owned" && !c4.untradeable).length,
+      buy: cards.filter((c4) => c4.source === "buy").length
     },
     notes
   };
 }
 function worthIt(totalCost, reward) {
-  const c2 = (n) => n.toLocaleString("en-US");
+  const c4 = (n2) => n2.toLocaleString("en-US");
   if (totalCost <= 0) return { verdict: "free", why: "Your spare and untradeable cards cover it, so it costs you no coins." };
-  if (reward.value === null) return { verdict: "unknown", why: `It costs you about ${c2(totalCost)} coins. GafferBot doesn't know what the reward is worth yet; enter it to compare.` };
+  if (reward.value === null) return { verdict: "unknown", why: `It costs you about ${c4(totalCost)} coins. GafferBot doesn't know what the reward is worth yet; enter it to compare.` };
   const ratio = reward.value / totalCost;
-  if (ratio >= 1.1) return { verdict: "do_it", why: `${reward.label ?? "The reward"} is worth about ${c2(reward.value)} coins and the squad costs you about ${c2(totalCost)}. Do it.` };
-  if (ratio >= 0.9) return { verdict: "close", why: `About even: the reward is worth about ${c2(reward.value)} coins and the squad costs you about ${c2(totalCost)}. Do it if you want the reward itself.` };
-  return { verdict: "skip", why: `The squad costs you about ${c2(totalCost)} coins and the reward is worth about ${c2(reward.value)}. Skip it unless you want the reward for its own sake.` };
+  if (ratio >= 1.1) return { verdict: "do_it", why: `${reward.label ?? "The reward"} is worth about ${c4(reward.value)} coins and the squad costs you about ${c4(totalCost)}. Do it.` };
+  if (ratio >= 0.9) return { verdict: "close", why: `About even: the reward is worth about ${c4(reward.value)} coins and the squad costs you about ${c4(totalCost)}. Do it if you want the reward itself.` };
+  return { verdict: "skip", why: `The squad costs you about ${c4(totalCost)} coins and the reward is worth about ${c4(reward.value)}. Skip it unless you want the reward for its own sake.` };
 }
 function solveMany(list, pool, rules, opts = {}) {
   const used = new Set(opts.exclude ?? []);
@@ -14121,41 +14153,41 @@ async function sbcPool(db, userId, platform, reqs) {
   ]);
   fail(state.error);
   const spares = (state.data?.unassigned ?? []).filter((u) => u.duplicate && (u.item_type ?? "player") === "player");
-  const ids = [.../* @__PURE__ */ new Set([...mine.map((c2) => c2.ea_item_id).filter((x) => !!x), ...spares.map((s) => s.ea_item_id)])];
+  const ids = [.../* @__PURE__ */ new Set([...mine.map((c4) => c4.ea_item_id).filter((x) => !!x), ...spares.map((s) => s.ea_item_id)])];
   const pool = await cardPool(db, platform, ids, namesIn(reqs));
   const cat = new Map(pool.items.map((r2) => [Number(r2.ea_item_id), r2]));
   const cards = [];
-  for (const c2 of mine) {
-    const ref = c2.ea_item_id ? cat.get(c2.ea_item_id) : void 0;
+  for (const c4 of mine) {
+    const ref = c4.ea_item_id ? cat.get(c4.ea_item_id) : void 0;
     cards.push({
-      id: c2.id,
-      name: c2.player_name,
-      rating: c2.overall,
-      positions: c2.positions,
-      league: c2.league,
-      nation: c2.nation,
-      club: c2.club,
+      id: c4.id,
+      name: c4.player_name,
+      rating: c4.overall,
+      positions: c4.positions,
+      league: c4.league,
+      nation: c4.nation,
+      club: c4.club,
       // The catalogue's version name ("Team of the Week") says more than the club file's rareflag.
-      version: ref?.version ?? c2.version,
-      is_icon: c2.is_icon,
-      is_hero: c2.is_hero,
+      version: ref?.version ?? c4.version,
+      is_icon: c4.is_icon,
+      is_hero: c4.is_hero,
       source: "owned",
-      untradeable: c2.tradeable === false,
+      untradeable: c4.tradeable === false,
       price: typeof ref?.price === "number" ? ref.price : null,
-      ea_item_id: c2.ea_item_id
+      ea_item_id: c4.ea_item_id
     });
   }
   spares.forEach((s, i) => {
     const ref = cat.get(s.ea_item_id);
     if (ref && ref.overall) cards.push(fromCatalogue(ref, "spare", s.untradeable, `spare:${s.item_id ?? i}`));
   });
-  const ownedIds = new Set(cards.map((c2) => c2.ea_item_id));
+  const ownedIds = new Set(cards.map((c4) => c4.ea_item_id));
   for (const r2 of pool.market) if (!ownedIds.has(Number(r2.ea_item_id))) cards.push(fromCatalogue(r2, "buy", false));
   return { cards, prices_at: pool.published_at, owned: mine.length, spares: spares.length };
 }
 async function eaNames(db, challenges) {
   const want = { leagues: /* @__PURE__ */ new Set(), nations: /* @__PURE__ */ new Set(), clubs: /* @__PURE__ */ new Set() };
-  for (const c2 of challenges) for (const r2 of c2.requirements) {
+  for (const c4 of challenges) for (const r2 of c4.requirements) {
     const t = r2.type === "LEAGUE_ID" ? "leagues" : r2.type === "NATION_ID" ? "nations" : r2.type === "CLUB_ID" ? "clubs" : null;
     if (t) for (const v of r2.values) want[t].add(v);
   }
@@ -14176,20 +14208,20 @@ async function sbcOverview(db, userId, platform) {
   const sets = s?.sbcs ?? [];
   const challenges = s?.sbc_challenges ?? [];
   const names = await eaNames(db, challenges);
-  const read = challenges.map((c2) => {
-    const { requirements, unread } = fromEa(c2.requirements, names);
+  const read = challenges.map((c4) => {
+    const { requirements, unread } = fromEa(c4.requirements, names);
     return {
-      set_id: c2.set_id,
-      challenge_id: c2.challenge_id,
-      name: c2.name,
-      description: c2.description,
-      status: c2.status,
-      formation: formationFromEa(c2.formation),
-      ea_formation: c2.formation,
+      set_id: c4.set_id,
+      challenge_id: c4.challenge_id,
+      name: c4.name,
+      description: c4.description,
+      status: c4.status,
+      formation: formationFromEa(c4.formation),
+      ea_formation: c4.formation,
       requirements,
       lines: requirements.map(describe),
       unread,
-      awards: c2.awards
+      awards: c4.awards
     };
   });
   const open = (x) => !(x.times_completed && !x.repeatable) && !(x.repeat_limit && (x.times_completed ?? 0) >= x.repeat_limit);
@@ -14197,8 +14229,8 @@ async function sbcOverview(db, userId, platform) {
     platform,
     sets_at: s?.sbcs_at ?? null,
     challenges_at: s?.sbc_challenges_at ?? null,
-    sets: sets.filter(open).map((x) => ({ ...x, challenges_seen: read.filter((c2) => c2.set_id === x.set_id) })),
-    other_challenges: read.filter((c2) => !sets.some((x) => x.set_id === c2.set_id)),
+    sets: sets.filter(open).map((x) => ({ ...x, challenges_seen: read.filter((c4) => c4.set_id === x.set_id) })),
+    other_challenges: read.filter((c4) => !sets.some((x) => x.set_id === c4.set_id)),
     shape: { challenge: s?.shape?.sbc_challenge ?? null, requirement: s?.shape?.sbc_requirement ?? null },
     formations: Object.keys(FORMATIONS),
     verified: false
@@ -14210,9 +14242,9 @@ async function rewardValue(db, userId, platform, awards) {
   const labels = [];
   let packs = null;
   for (const a of awards) {
-    const n = a.count ?? 1;
+    const n2 = a.count ?? 1;
     if (/coin/i.test(a.type) && a.value) {
-      total += a.value * n;
+      total += a.value * n2;
       known = true;
       labels.push(`${a.value.toLocaleString("en-US")} coins`);
       continue;
@@ -14221,9 +14253,9 @@ async function rewardValue(db, userId, platform, awards) {
       packs ??= (await packAdvice(db, userId, platform)).packs;
       const p = packs.find((x) => x.pack_id === a.value);
       if (p && p.ev_low !== null) {
-        total += Math.round(p.ev_low) * n;
+        total += Math.round(p.ev_low) * n2;
         known = true;
-        labels.push(`${n > 1 ? `${n}\xD7 ` : ""}${p.name}`);
+        labels.push(`${n2 > 1 ? `${n2}\xD7 ` : ""}${p.name}`);
       } else labels.push(`pack ${a.value}`);
       continue;
     }
@@ -14232,7 +14264,7 @@ async function rewardValue(db, userId, platform, awards) {
       if (!error) {
         const item = (data?.items ?? [])[0];
         if (item && typeof item.price === "number") {
-          total += item.price * n;
+          total += item.price * n2;
           known = true;
           labels.push(String(item.player_name ?? "the player"));
           continue;
@@ -14248,15 +14280,15 @@ function parseSolveBody(b) {
   if (!list.length || list.length > MAX_CHALLENGES) throw new FutError(`Send 1 to ${MAX_CHALLENGES} challenges.`);
   let dropped = 0;
   const challenges = list.map((raw, i) => {
-    const c2 = raw && typeof raw === "object" ? raw : {};
-    const formation = typeof c2.formation === "string" && c2.formation ? FORMATIONS[c2.formation] ? c2.formation : formationFromEa(c2.formation) : "4-3-3";
+    const c4 = raw && typeof raw === "object" ? raw : {};
+    const formation = typeof c4.formation === "string" && c4.formation ? FORMATIONS[c4.formation] ? c4.formation : formationFromEa(c4.formation) : "4-3-3";
     if (!formation) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
-    const cleaned = cleanRequirements(c2.requirements);
+    const cleaned = cleanRequirements(c4.requirements);
     dropped += cleaned.dropped;
     let reqs = cleaned.requirements;
-    if (typeof c2.text === "string" && c2.text.trim()) reqs = [...reqs, ...parseRequirements(c2.text.slice(0, 4e3)).requirements];
+    if (typeof c4.text === "string" && c4.text.trim()) reqs = [...reqs, ...parseRequirements(c4.text.slice(0, 4e3)).requirements];
     if (!reqs.length) throw new FutError(`Challenge ${i + 1} has no requirements. Paste them or add them on the page.`);
-    return { name: typeof c2.name === "string" && c2.name.trim() ? c2.name.trim().slice(0, 120) : `Challenge ${i + 1}`, formation, requirements: reqs };
+    return { name: typeof c4.name === "string" && c4.name.trim() ? c4.name.trim().slice(0, 120) : `Challenge ${i + 1}`, formation, requirements: reqs };
   });
   const o = b.options && typeof b.options === "object" ? b.options : {};
   const protect = typeof o.protect_from === "number" && Number.isInteger(o.protect_from) && o.protect_from >= 1 && o.protect_from <= 99 ? o.protect_from : null;
@@ -14266,7 +14298,7 @@ function parseSolveBody(b) {
   return { challenges, options: { use_tradeables: o.use_tradeables !== false, buy: o.buy !== false, protect_from: protect, exclude }, reward, set_id, dropped };
 }
 async function solveForUser(db, userId, platform, req) {
-  const all = req.challenges.flatMap((c2) => c2.requirements);
+  const all = req.challenges.flatMap((c4) => c4.requirements);
   const needChem = all.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry");
   const [pool, rules] = await Promise.all([sbcPool(db, userId, platform, all), needChem ? activeRules(db) : Promise.resolve(null)]);
   if (!pool.cards.length) throw new FutError("No cards to build with yet. Sync your club with the XI Lab helper, or wait for the first FUT.GG price refresh.");
@@ -14289,6 +14321,27 @@ async function solveForUser(db, userId, platform, req) {
     worth: worthIt(solved.total_cost, reward),
     verified: false
   };
+}
+async function sbcVerdicts(db, userId, platform, keep = [], o = {}) {
+  const over = await sbcOverview(db, userId, platform);
+  const done = (st) => /complete/i.test(st ?? "") && !/in.?complete|not/i.test(st ?? "");
+  const ready = over.sets.map((set) => ({ set, todo: set.challenges_seen.filter((c4) => !done(c4.status)) })).filter((x) => x.todo.length > 0 && x.todo.length <= MAX_CHALLENGES && x.todo.every((c4) => c4.formation && c4.requirements.length && !c4.unread.length)).sort((a, b) => String(a.set.end_at ?? "9").localeCompare(String(b.set.end_at ?? "9")));
+  const unread = over.sets.length - ready.length;
+  const picked = ready.slice(0, o.maxSets ?? 6);
+  if (!picked.length) return { open: over.sets.length, unread, sets: [], seen_at: over.challenges_at ?? over.sets_at };
+  const all = picked.flatMap((x) => x.todo.flatMap((c4) => c4.requirements));
+  const needChem = all.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry");
+  const [pool, rules] = await Promise.all([sbcPool(db, userId, platform, all), needChem ? activeRules(db) : Promise.resolve(null)]);
+  const sets = [];
+  const started = Date.now();
+  for (const { set, todo } of picked) {
+    if (Date.now() - started > (o.budgetMs ?? 5e3)) break;
+    const solved = solveMany(todo.map((c4) => ({ name: c4.name, formation: c4.formation, requirements: c4.requirements })), pool.cards, rules, { exclude: keep });
+    const reward = await rewardValue(db, userId, platform, set.awards).catch(() => ({ value: null, label: null }));
+    const worth = solved.feasible ? worthIt(solved.total_cost, reward) : { verdict: "skip", why: "Your club and the cheap market cards can't meet every requirement." };
+    sets.push({ set_id: set.set_id, name: set.name, end_at: set.end_at, challenges: todo.length, feasible: solved.feasible, total_cost: solved.total_cost, buy_cost: solved.buy_cost, reward_value: reward.value, reward_label: reward.label, verdict: worth.verdict, why: worth.why });
+  }
+  return { open: over.sets.length, unread: unread + (picked.length - sets.length) + (ready.length - picked.length), sets, seen_at: over.challenges_at ?? over.sets_at };
 }
 
 // supabase/functions/_shared/fut/evolutions.ts
@@ -14324,8 +14377,8 @@ function parseRuleLine(raw) {
   }
   label = label.trim();
   const f2 = statOf(label);
-  const n = /(\d+)/.exec(rest)?.[1];
-  if (f2 && n) return { field: f2, op: opOf2(rest), value: Number(n) };
+  const n2 = /(\d+)/.exec(rest)?.[1];
+  if (f2 && n2) return { field: f2, op: opOf2(rest), value: Number(n2) };
   const values = rest.split(/\s*(?:,|\bor\b|\/|\|)\s*/i).map((s) => s.trim()).filter(Boolean).slice(0, 15);
   const not = /\bnot\b|\bexcept\b|\bexclud/i.test(label + " " + rest);
   const clean = values.map((v) => v.replace(/^(not|except)\s+/i, ""));
@@ -14403,15 +14456,15 @@ function fromEa2(e, names) {
     const idField = w === "LEAGUE_ID" || w === "LEAGUE" ? "league" : w === "NATION_ID" || w === "NATION" ? "nation" : w === "CLUB_ID" || w === "CLUB" || w === "TEAM_ID" ? "club" : null;
     if (idField && nums2.length) {
       const m = idField === "league" ? names.leagues : idField === "nation" ? names.nations : names.clubs;
-      rules.push({ field: idField, op: "in", values: nums2.map((n) => m.get(n) ?? `EA ${n}`) });
+      rules.push({ field: idField, op: "in", values: nums2.map((n2) => m.get(n2) ?? `EA ${n2}`) });
       continue;
     }
     unread.push(show(r2));
   }
   const levels = e.levels.map((l) => l.upgrades.flatMap((u) => {
     const w = eaWord(u.type), f2 = statOf(w.replace(/_/g, " "));
-    const n = u.values.find((v) => typeof v === "number");
-    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && n !== void 0 && n > 0 && n <= 30) return [{ field: f2, add: n }];
+    const n2 = u.values.find((v) => typeof v === "number");
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && n2 !== void 0 && n2 > 0 && n2 <= 30) return [{ field: f2, add: n2 }];
     const s = u.values.find((v) => typeof v === "string");
     if (/^(PLAYSTYLE|TRAIT)S?$/.test(w) && s) return [{ field: "playstyle", name: s, plus: false }];
     if (/^(PLAYSTYLE|TRAIT)S?_?(PLUS|\+)$|^ICON_TRAIT$/.test(w) && s) return [{ field: "playstyle", name: s, plus: true }];
@@ -14421,24 +14474,24 @@ function fromEa2(e, names) {
   })).filter((l) => l.length);
   return { id: `ea:${e.evo_id}`, name: e.name, description: e.description, end_at: e.end_at, coins: e.coins, points: e.points, rules, levels, unread, source: "helper" };
 }
-var rarityWords = (c2) => {
-  const v = (c2.version ?? "").toLowerCase();
+var rarityWords = (c4) => {
+  const v = (c4.version ?? "").toLowerCase();
   const out = [v];
-  if (c2.is_icon) out.push("icon");
-  if (c2.is_hero) out.push("hero");
+  if (c4.is_icon) out.push("icon");
+  if (c4.is_hero) out.push("hero");
   if (/^(rare|common)$/.test(v) || !v) out.push("base");
   else out.push("special", "promo");
   if (v === "rare") out.push("rare");
   if (v === "common") out.push("common", "non-rare");
   return out;
 };
-function numValue(c2, f2) {
-  if (f2 === "overall") return c2.overall;
-  if (f2 === "skill_moves") return c2.skill_moves;
-  if (f2 === "weak_foot") return c2.weak_foot;
-  if (f2 === "playstyles") return c2.playstyles.length + c2.playstyles_plus.length;
-  if (f2 === "playstyles_plus") return c2.playstyles_plus.length;
-  return c2.stats[f2] ?? null;
+function numValue(c4, f2) {
+  if (f2 === "overall") return c4.overall;
+  if (f2 === "skill_moves") return c4.skill_moves;
+  if (f2 === "weak_foot") return c4.weak_foot;
+  if (f2 === "playstyles") return c4.playstyles.length + c4.playstyles_plus.length;
+  if (f2 === "playstyles_plus") return c4.playstyles_plus.length;
+  return c4.stats[f2] ?? null;
 }
 function describeRule(r2) {
   const LABEL3 = { overall: "Overall", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot", playstyles: "PlayStyles", playstyles_plus: "PlayStyles+", position: "Position", league: "League", nation: "Nation", club: "Club", rarity: "Card type" };
@@ -14451,24 +14504,24 @@ function describeUpgrade(u) {
   const LABEL3 = { overall: "OVR", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot" };
   return `+${u.add} ${LABEL3[u.field]}`;
 }
-function checkRules(c2, rules) {
+function checkRules(c4, rules) {
   return rules.map((r2) => {
     let ok;
     if ("value" in r2) {
-      const v = numValue(c2, r2.field);
+      const v = numValue(c4, r2.field);
       ok = v === null ? null : r2.op === "min" ? v >= r2.value : r2.op === "max" ? v <= r2.value : v === r2.value;
     } else {
       const want = new Set(r2.values.map(norm6));
-      const have = r2.field === "position" ? c2.positions.map(norm6) : r2.field === "rarity" ? rarityWords(c2).map(norm6) : [norm6(c2[r2.field] ?? "")];
+      const have = r2.field === "position" ? c4.positions.map(norm6) : r2.field === "rarity" ? rarityWords(c4).map(norm6) : [norm6(c4[r2.field] ?? "")];
       const hit = have.some((h) => want.has(h));
       ok = r2.op === "in" ? hit : !hit;
-      if (r2.field !== "position" && r2.field !== "rarity" && !c2[r2.field]) ok = null;
+      if (r2.field !== "position" && r2.field !== "rarity" && !c4[r2.field]) ok = null;
     }
     return { label: describeRule(r2), ok };
   });
 }
-function evolve(c2, levels) {
-  const out = { ...c2, stats: { ...c2.stats }, positions: [...c2.positions], playstyles: [...c2.playstyles], playstyles_plus: [...c2.playstyles_plus] };
+function evolve(c4, levels) {
+  const out = { ...c4, stats: { ...c4.stats }, positions: [...c4.positions], playstyles: [...c4.playstyles], playstyles_plus: [...c4.playstyles_plus] };
   for (const u of levels.flat()) {
     if (u.field === "overall") out.overall = Math.min(99, out.overall + u.add);
     else if (u.field === "skill_moves") out.skill_moves = Math.min(5, (out.skill_moves ?? 1) + u.add);
@@ -14499,11 +14552,11 @@ function squadGain(before, after, slots) {
 }
 function matchEvolution(evo, cards, slots, limit = 15) {
   const all = [];
-  for (const c2 of cards) {
-    const checks = checkRules(c2, evo.rules);
+  for (const c4 of cards) {
+    const checks = checkRules(c4, evo.rules);
     if (checks.some((x) => x.ok === false)) continue;
-    const after = evolve(c2, evo.levels);
-    all.push({ card: c2, after, checks, eligible: checks.every((x) => x.ok === true) ? true : null, squad: squadGain(c2, after, slots) });
+    const after = evolve(c4, evo.levels);
+    all.push({ card: c4, after, checks, eligible: checks.every((x) => x.ok === true) ? true : null, squad: squadGain(c4, after, slots) });
   }
   all.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || b.squad.gain - a.squad.gain || b.after.overall - a.after.overall || (a.card.untradeable === b.card.untradeable ? 0 : a.card.untradeable ? -1 : 1));
   return { eligible: all.filter((m) => m.eligible === true).length, maybe: all.filter((m) => m.eligible === null).length, matches: all.slice(0, limit) };
@@ -14514,7 +14567,7 @@ var FACE3 = ["pac", "sho", "pas", "dri", "def", "phy"];
 var CHUNK = 100;
 async function evoCards(db, userId) {
   const mine = await searchMyCards(db, userId, { all: true, owned_only: true });
-  const keys = [...new Set(mine.map((c2) => c2.ea_item_id).filter((x) => !!x).map(String))];
+  const keys = [...new Set(mine.map((c4) => c4.ea_item_id).filter((x) => !!x).map(String))];
   const catBy = /* @__PURE__ */ new Map();
   for (let i = 0; i < keys.length; i += CHUNK) {
     const { data, error } = await db.from("player_cards").select("id, source_card_key").eq("source_id", "futgg_catalogue").is("owner_user_id", null).in("source_card_key", keys.slice(i, i + CHUNK));
@@ -14531,31 +14584,31 @@ async function evoCards(db, userId) {
     for (const r2 of a.data ?? []) attrs.set(r2.card_id, r2);
     for (const r2 of s.data ?? []) styles.set(r2.card_id, [...styles.get(r2.card_id) ?? [], r2]);
   }
-  return mine.map((c2) => {
-    const cat = c2.ea_item_id ? catBy.get(String(c2.ea_item_id)) : void 0;
+  return mine.map((c4) => {
+    const cat = c4.ea_item_id ? catBy.get(String(c4.ea_item_id)) : void 0;
     const a = cat ? attrs.get(cat) : void 0, st = cat ? styles.get(cat) ?? [] : [];
-    const stats = { ...c2.stats };
+    const stats = { ...c4.stats };
     if (a) {
       for (const k of FACE3) if (stats[k] === void 0 && typeof a[k] === "number") stats[k] = a[k];
     }
     return {
-      id: c2.id,
-      name: c2.player_name,
-      version: c2.version,
-      overall: c2.overall,
-      positions: c2.positions,
-      league: c2.league,
-      nation: c2.nation,
-      club: c2.club,
-      is_icon: c2.is_icon,
-      is_hero: c2.is_hero,
+      id: c4.id,
+      name: c4.player_name,
+      version: c4.version,
+      overall: c4.overall,
+      positions: c4.positions,
+      league: c4.league,
+      nation: c4.nation,
+      club: c4.club,
+      is_icon: c4.is_icon,
+      is_hero: c4.is_hero,
       stats,
-      skill_moves: c2.skill_moves,
-      weak_foot: c2.weak_foot,
-      playstyles: c2.playstyles.length || c2.playstyles_plus.length ? c2.playstyles : st.filter((x) => !x.is_plus).map((x) => x.name),
-      playstyles_plus: c2.playstyles.length || c2.playstyles_plus.length ? c2.playstyles_plus : st.filter((x) => x.is_plus).map((x) => x.name),
-      ea_item_id: c2.ea_item_id,
-      untradeable: c2.tradeable === false
+      skill_moves: c4.skill_moves,
+      weak_foot: c4.weak_foot,
+      playstyles: c4.playstyles.length || c4.playstyles_plus.length ? c4.playstyles : st.filter((x) => !x.is_plus).map((x) => x.name),
+      playstyles_plus: c4.playstyles.length || c4.playstyles_plus.length ? c4.playstyles_plus : st.filter((x) => x.is_plus).map((x) => x.name),
+      ea_item_id: c4.ea_item_id,
+      untradeable: c4.tradeable === false
     };
   });
 }
@@ -14647,7 +14700,7 @@ function tradeSummary(rows, names, now2 = Date.now()) {
     };
   }).sort((a, b) => b.sold_at.localeCompare(a.sold_at));
   const since = (days) => flips.filter((f2) => now2 - Date.parse(f2.sold_at) <= days * 864e5);
-  const sum = (l) => l.reduce((n, f2) => n + f2.profit, 0);
+  const sum = (l) => l.reduce((n2, f2) => n2 + f2.profit, 0);
   const byDay = /* @__PURE__ */ new Map();
   for (const f2 of [...flips].reverse()) byDay.set(f2.sold_at.slice(0, 10), (byDay.get(f2.sold_at.slice(0, 10)) ?? 0) + f2.profit);
   let running = 0;
@@ -14665,12 +14718,12 @@ function tradeSummary(rows, names, now2 = Date.now()) {
       week: sum(since(7)),
       month: sum(since(30)),
       win_rate: flips.length ? Math.round(wins / flips.length * 100) : null,
-      tax_paid: flips.reduce((n, f2) => n + (f2.sold_for - f2.after_tax), 0),
+      tax_paid: flips.reduce((n2, f2) => n2 + (f2.sold_for - f2.after_tax), 0),
       open: open.length,
-      open_cost: open.reduce((n, o) => n + o.bought_for, 0),
-      unrealised: open.some((o) => o.unrealised !== null) ? open.reduce((n, o) => n + (o.unrealised ?? 0), 0) : null,
+      open_cost: open.reduce((n2, o) => n2 + o.bought_for, 0),
+      unrealised: open.some((o) => o.unrealised !== null) ? open.reduce((n2, o) => n2 + (o.unrealised ?? 0), 0) : null,
       sales_without_buy: unknownBuy.length,
-      sales_without_buy_after_tax: unknownBuy.reduce((n, s) => n + s.after_tax, 0)
+      sales_without_buy_after_tax: unknownBuy.reduce((n2, s) => n2 + s.after_tax, 0)
     },
     best: [...flips].sort((a, b) => b.profit - a.profit).slice(0, 5),
     worst: [...flips].sort((a, b) => a.profit - b.profit).filter((f2) => f2.profit < 0).slice(0, 5),
@@ -14699,7 +14752,7 @@ async function tradeOverview(db, userId, platform, now2 = Date.now()) {
 var EA_TAX4 = 0.05;
 var afterTax2 = (v) => Math.floor(v * (1 - EA_TAX4));
 var pct3 = (now2, then) => now2 && then ? Math.round((now2 - then) / then * 1e3) / 10 : null;
-var c = (n) => n.toLocaleString("en-US");
+var c = (n2) => n2.toLocaleString("en-US");
 function adviseCard(x) {
   const t = x.trend, price = t?.price ?? null;
   const ch3 = pct3(price, t?.d3 ?? t?.d1 ?? null), ch7 = pct3(price, t?.d7 ?? null);
@@ -14722,7 +14775,7 @@ var ORDER = { sell_now: 0, sell_high: 1, sell: 2, wait: 3, hold_fodder: 4, keep_
 function adviseClub(cards) {
   const advice = cards.map(adviseCard).sort((a, b) => ORDER[a.verdict] - ORDER[b.verdict] || (b.price ?? 0) - (a.price ?? 0));
   const of = (v) => advice.filter((a) => v.includes(a.verdict));
-  const coins2 = (l) => l.reduce((n, a) => n + (a.after_tax ?? 0), 0);
+  const coins2 = (l) => l.reduce((n2, a) => n2 + (a.after_tax ?? 0), 0);
   const sell = of(["sell_now", "sell_high", "sell"]);
   const counts = Object.fromEntries(Object.keys(ORDER).map((k) => [k, advice.filter((a) => a.verdict === k).length]));
   return {
@@ -14742,19 +14795,19 @@ async function squadUse(db, userId) {
     for (const r2 of data ?? []) {
       if (!r2.card_id) continue;
       const list = use.get(r2.card_id) ?? [];
-      const n = names.get(r2.squad_id);
-      if (n && !list.includes(n)) use.set(r2.card_id, [...list, n]);
+      const n2 = names.get(r2.squad_id);
+      if (n2 && !list.includes(n2)) use.set(r2.card_id, [...list, n2]);
     }
   }
   return use;
 }
 async function sellOrKeep(db, userId, platform, bestEvo, playing) {
   const club = await searchMyCards(db, userId, { all: true, owned_only: true });
-  const mine = club.filter((c2) => c2.tradeable !== false);
+  const mine = club.filter((c4) => c4.tradeable !== false);
   const [saved, evo, play] = await Promise.all([squadUse(db, userId), bestEvo ? bestEvo().catch(() => /* @__PURE__ */ new Map()) : Promise.resolve(/* @__PURE__ */ new Map()), playing ? playing().catch(() => /* @__PURE__ */ new Map()) : Promise.resolve(/* @__PURE__ */ new Map())]);
   const use = new Map(saved);
-  for (const [id, label] of play) use.set(id, [label, ...(use.get(id) ?? []).filter((n) => n !== label)]);
-  const ids = [...new Set(mine.map((c2) => c2.ea_item_id).filter((x) => !!x))].slice(0, 2e3);
+  for (const [id, label] of play) use.set(id, [label, ...(use.get(id) ?? []).filter((n2) => n2 !== label)]);
+  const ids = [...new Set(mine.map((c4) => c4.ea_item_id).filter((x) => !!x))].slice(0, 2e3);
   let trends = /* @__PURE__ */ new Map(), floors = {}, prices_at = null;
   if (ids.length) {
     const { data, error } = await db.rpc("card_price_trend", { p_platform: platform, p_ids: ids });
@@ -14772,18 +14825,18 @@ async function sellOrKeep(db, userId, platform, bestEvo, playing) {
       points: Number(r2.points ?? 0)
     }]));
   }
-  const inputs = mine.map((c2) => ({
-    id: c2.id,
-    name: c2.player_name,
-    rating: c2.overall,
-    version: c2.version,
-    positions: c2.positions,
-    ea_item_id: c2.ea_item_id,
-    purchase_price: c2.purchase_price,
-    trend: c2.ea_item_id ? trends.get(c2.ea_item_id) ?? null : null,
-    squads: use.get(c2.id) ?? [],
-    evo: evo.get(c2.id) ?? null,
-    floor: typeof floors[String(c2.overall)] === "number" ? floors[String(c2.overall)] : null
+  const inputs = mine.map((c4) => ({
+    id: c4.id,
+    name: c4.player_name,
+    rating: c4.overall,
+    version: c4.version,
+    positions: c4.positions,
+    ea_item_id: c4.ea_item_id,
+    purchase_price: c4.purchase_price,
+    trend: c4.ea_item_id ? trends.get(c4.ea_item_id) ?? null : null,
+    squads: use.get(c4.id) ?? [],
+    evo: evo.get(c4.id) ?? null,
+    floor: typeof floors[String(c4.overall)] === "number" ? floors[String(c4.overall)] : null
   }));
   return {
     platform,
@@ -14895,8 +14948,8 @@ var SORT_EXTRAS = ["fit", "price", "name"];
 var MAX_QUERY_PRICE = 15e6;
 var intIn = (v, min, max) => {
   if (v === null || v === void 0 || v === "") return null;
-  const n = typeof v === "string" ? Number(v.replace(/[,\s]/g, "")) : Number(v);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : null;
+  const n2 = typeof v === "string" ? Number(v.replace(/[,\s]/g, "")) : Number(v);
+  return Number.isFinite(n2) ? Math.min(max, Math.max(min, Math.round(n2))) : null;
 };
 var textOr = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 var listOf = (v, ok, max) => {
@@ -15192,17 +15245,17 @@ var roleWeights = (position, role) => {
 
 // supabase/functions/_shared/fut/meta-data.ts
 var nums = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => typeof v === "number"));
-var fromSearch = (c2) => ({
-  name: String(c2.player_name),
-  rating: Number(c2.overall),
-  positions: [String(c2.position), ...c2.alt_positions ?? []].filter(Boolean),
-  stats: nums(c2.stats),
-  playstyles: c2.playstyles ?? [],
-  playstyles_plus: c2.playstyles_plus ?? [],
-  height_cm: c2.height_cm ?? null,
-  accelerate_type: c2.accelerate_type ?? null,
-  weak_foot: c2.weak_foot ?? null,
-  skill_moves: c2.skill_moves ?? null
+var fromSearch = (c4) => ({
+  name: String(c4.player_name),
+  rating: Number(c4.overall),
+  positions: [String(c4.position), ...c4.alt_positions ?? []].filter(Boolean),
+  stats: nums(c4.stats),
+  playstyles: c4.playstyles ?? [],
+  playstyles_plus: c4.playstyles_plus ?? [],
+  height_cm: c4.height_cm ?? null,
+  accelerate_type: c4.accelerate_type ?? null,
+  weak_foot: c4.weak_foot ?? null,
+  skill_moves: c4.skill_moves ?? null
 });
 async function loadMetaCard(db, userId, cardId) {
   const card = await getCard(db, userId, cardId);
@@ -15247,12 +15300,12 @@ async function metaTop(db, userId, b) {
   if (maxPrice !== null && (!Number.isInteger(maxPrice) || maxPrice < 0)) throw new FutError("max_price must be whole coins.");
   const query = cleanPlayerQuery({ positions: [position === "CF" ? "ST" : position === "LWB" ? "LB" : position === "RWB" ? "RB" : position], weights: roleWeights(position, role?.role), max_price: maxPrice, priced_only: maxPrice !== null, owned_only: b.owned_only === true, sort: "fit" });
   const res = await searchPlayers(db, userId, query, { platform, limit: 100 });
-  const cards = res.cards.map((c2) => {
-    const m = fromSearch(c2);
+  const cards = res.cards.map((c4) => {
+    const m = fromSearch(c4);
     const r2 = metaRate(m, [position]);
     const pick = role ? r2.roles.find((x) => x.role === role.role) ?? r2.best : r2.best;
-    return { card_id: String(c2.id), ea_item_id: c2.ea_item_id ?? null, name: m.name, rating: m.rating, version: c2.version ?? null, position: String(c2.position), owned: c2.owned === true, price: c2.price ?? null, meta: pick };
-  }).filter((c2) => c2.meta).sort((a, b2) => b2.meta.score - a.meta.score || (a.price ?? Infinity) - (b2.price ?? Infinity));
+    return { card_id: String(c4.id), ea_item_id: c4.ea_item_id ?? null, name: m.name, rating: m.rating, version: c4.version ?? null, position: String(c4.position), owned: c4.owned === true, price: c4.price ?? null, meta: pick };
+  }).filter((c4) => c4.meta).sort((a, b2) => b2.meta.score - a.meta.score || (a.price ?? Infinity) - (b2.price ?? Infinity));
   return { platform, position, role: role?.role ?? null, roles: roles.map((r2) => r2.role), max_price: maxPrice, published_at: res.published_at, cards: cards.slice(0, 30), with_stats: res.with_stats, note: NOTE, verified: false };
 }
 
@@ -15261,15 +15314,15 @@ function historyStats(points, now2 = Date.now()) {
   if (!points.length) return { latest: null, low: null, high: null, change_24h: null, change_7d: null, change_range: null, hourly_points: 0 };
   const latest = points[points.length - 1];
   const at2 = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
-  const pct6 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
+  const pct7 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
   return {
     latest: latest.price,
     latest_at: latest.t,
     low: Math.min(...points.map((p) => p.price)),
     high: Math.max(...points.map((p) => p.price)),
-    change_24h: pct6(at2(24 * 36e5)),
-    change_7d: pct6(at2(7 * 864e5)),
-    change_range: pct6(points[0]),
+    change_24h: pct7(at2(24 * 36e5)),
+    change_7d: pct7(at2(7 * 864e5)),
+    change_range: pct7(points[0]),
     hourly_points: points.filter((p) => p.kind === "hourly").length
   };
 }
@@ -15323,7 +15376,7 @@ var median2 = (xs) => {
   const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-var r12 = (n) => Math.round(n * 10) / 10;
+var r12 = (n2) => Math.round(n2 * 10) / 10;
 function windowMove(steps, band, start, hours) {
   const inside = steps.filter((s) => s.band === band && Date.parse(s.t) > start && Date.parse(s.t) <= start + hours * 36e5);
   if (!inside.length) return null;
@@ -15336,7 +15389,7 @@ function eventStats(e, steps, band, now2, days = 90) {
   if (moves.length < MIN_WEEKS || med === null) {
     return { band, weeks: moves.length, median: med === null ? null : r12(med), falls, rises, verdict: "not_enough_data", line: `Only ${moves.length} week${moves.length === 1 ? "" : "s"} of prices so far; GafferBot needs ${MIN_WEEKS} before it says anything.` };
   }
-  const share = (n) => n / moves.length;
+  const share = (n2) => n2 / moves.length;
   const drop = med <= -2 && share(falls) >= 0.6, rise = med >= 2 && share(rises) >= 0.6;
   const verdict = drop ? "sell_before" : rise ? "buy_before" : "no_pattern";
   const span = e.window_hours === 24 ? "the next day" : `the next ${e.window_hours / 24} days`;
@@ -15412,7 +15465,7 @@ function fodderRatings(points, now2 = Date.now()) {
     const month = list.filter((p) => now2 - Date.parse(p.t) <= 30 * 24 * H).map((p) => p.floor);
     const vs = weekMed === null ? null : last.floor / weekMed - 1;
     const signal = vs === null ? "new" : vs >= SPIKE ? "spike" : vs <= CHEAP ? "cheap" : "normal";
-    const k = (n) => n >= 1e3 ? `${Math.round(n / 100) / 10}k` : String(n);
+    const k = (n2) => n2 >= 1e3 ? `${Math.round(n2 / 100) / 10}k` : String(n2);
     const line = signal === "spike" ? `${r2}s are ${Math.round(vs * 100)}% above their week (${k(last.floor)} vs ${k(weekMed)}): likely SBC demand. Sell spare ${r2}s, don't buy them for SBCs now.` : signal === "cheap" ? `${r2}s are ${Math.round(-vs * 100)}% below their week (${k(last.floor)} vs ${k(weekMed)}): a good time to stock up for SBCs.` : signal === "new" ? `${r2}s: ${k(last.floor)}. Not enough refreshes yet to compare with the week.` : `${r2}s: ${k(last.floor)}, close to their week (${vs >= 0 ? "+" : ""}${Math.round(vs * 100)}%).`;
     out.push({
       rating: r2,
@@ -15478,14 +15531,14 @@ function evaluate(formation, slots, manager, rules) {
     ...manager ? { manager: { nation: manager.nation ?? void 0, league: manager.league ?? void 0 } } : {},
     slots: filled.map((s) => ({ slot: s.slot, position: s.position, card: s.card }))
   }, rules);
-  const rating = filled.reduce((a, s) => a + (s.card.rating ?? 0), 0);
-  return { chem, total: chem.total, rating, filled: filled.length };
+  const rating2 = filled.reduce((a, s) => a + (s.card.rating ?? 0), 0);
+  return { chem, total: chem.total, rating: rating2, filled: filled.length };
 }
 function score(e, by) {
   return e.filled * 1e7 + (by === "ovr" ? e.rating * 100 + e.total : e.total * 1e4 + e.rating);
 }
 function pickPool(pool, taken) {
-  return pool.filter((c2) => !taken.has(norm7(c2.name)));
+  return pool.filter((c4) => !taken.has(norm7(c4.name)));
 }
 function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
   const layout = FORMATIONS[formation];
@@ -15504,7 +15557,7 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
   const byPos = /* @__PURE__ */ new Map();
   for (const s of slots) {
     if (byPos.has(s.position)) continue;
-    byPos.set(s.position, cards.filter((c2) => plays2(c2, s.position)).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)));
+    byPos.set(s.position, cards.filter((c4) => plays2(c4, s.position)).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)));
   }
   const open = slots.filter((s) => !s.locked);
   const order = [...open].sort((a, b) => byPos.get(a.position).length - byPos.get(b.position).length);
@@ -15513,7 +15566,7 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
     const used = new Set(taken);
     for (const o of order) {
       const list = byPos.get(o.position);
-      const pick = prefer && list.find((c2) => !used.has(norm7(c2.name)) && prefer(c2)) || list.find((c2) => !used.has(norm7(c2.name)));
+      const pick = prefer && list.find((c4) => !used.has(norm7(c4.name)) && prefer(c4)) || list.find((c4) => !used.has(norm7(c4.name)));
       if (pick) {
         out.find((s) => s.slot === o.slot).card = pick;
         used.add(norm7(pick.name));
@@ -15529,9 +15582,9 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
       for (const o of open) {
         const i = cur.findIndex((s) => s.slot === o.slot);
         const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
-        for (const c2 of byPos.get(o.position).slice(0, limit2)) {
-          if (used.has(norm7(c2.name)) || c2.id === cur[i].card?.id) continue;
-          const next = cur.map((s, j) => j === i ? { ...s, card: c2 } : s);
+        for (const c4 of byPos.get(o.position).slice(0, limit2)) {
+          if (used.has(norm7(c4.name)) || c4.id === cur[i].card?.id) continue;
+          const next = cur.map((s, j) => j === i ? { ...s, card: c4 } : s);
           const v = score(evaluate(formation, next, base.manager, rules), by);
           if (v > best) {
             best = v;
@@ -15560,11 +15613,11 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
     const groups = [];
     for (const t of ["league", "nation", "club"]) {
       const counts = /* @__PURE__ */ new Map();
-      for (const c2 of cards) {
-        const k = c2[t];
+      for (const c4 of cards) {
+        const k = c4[t];
         if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
       }
-      for (const [k, n] of counts) if (n >= 3) groups.push({ key: `${t}:${k}`, n, test: (c2) => c2[t] === k });
+      for (const [k, n2] of counts) if (n2 >= 3) groups.push({ key: `${t}:${k}`, n: n2, test: (c4) => c4[t] === k });
     }
     groups.sort((a, b) => b.n - a.n);
     for (const g of groups.slice(0, opts.seeds ?? 8)) starts.push(greedy(g.test));
@@ -15585,6 +15638,64 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
     filled: e.filled,
     empty: winner.slots.filter((s) => !s.card).map((s) => s.slot)
   };
+}
+function bestSquads(base, formation, pool, rules, by) {
+  if (formation !== "all") return [bestSquadFor(base, formation, pool, rules, by)];
+  const all = Object.keys(FORMATIONS).map((f2) => bestSquadFor(base, f2, pool, rules, by, { seeds: 4 }));
+  const key = (b) => b.filled * 1e7 + (by === "ovr" ? b.rating * 1e3 + b.chemistry : b.chemistry * 1e4 + b.rating);
+  return all.sort((a, b) => key(b) - key(a));
+}
+function suggestForSlot(squad, slot, pool, rules, by, limit = 12) {
+  const i = squad.slots.findIndex((s) => s.slot === slot);
+  if (i < 0) throw new Error(`No slot "${slot}" in ${squad.formation}`);
+  const target = squad.slots[i];
+  const before = evaluate(squad.formation, squad.slots, squad.manager, rules).total;
+  const taken = new Set(squad.slots.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
+  const out = [];
+  for (const c4 of pickPool(pool, taken)) {
+    if (!plays2(c4, target.position) || c4.id === target.card?.id) continue;
+    const next = squad.slots.map((s, j) => j === i ? { ...s, card: c4 } : s);
+    const e = evaluate(squad.formation, next, squad.manager, rules);
+    out.push({ card: c4, team_chemistry: e.total, chemistry: e.chem.players.find((p) => p.slot === slot)?.chemistry ?? 0, change: e.total - before });
+  }
+  out.sort((a, b) => by === "ovr" ? (b.card.rating ?? 0) - (a.card.rating ?? 0) || b.team_chemistry - a.team_chemistry : b.team_chemistry - a.team_chemistry || (b.card.rating ?? 0) - (a.card.rating ?? 0));
+  return { slot, position: target.position, before, suggestions: out.slice(0, limit) };
+}
+async function squadRoles(db, userId, squad) {
+  const ids = [...new Set(squad.slots.flatMap((s) => s.card && /^[0-9a-f-]{36}$/i.test(s.card.id) ? [s.card.id] : []))];
+  const out = {};
+  for (const s of squad.slots) out[s.slot] = { position: s.position, roles: [] };
+  if (!ids.length) return out;
+  const { data: rows, error } = await db.from("player_cards").select("id, owner_user_id, source_id, source_card_key").in("id", ids);
+  fail(error);
+  const visible = (rows ?? []).filter((r2) => r2.owner_user_id === null || r2.owner_user_id === userId);
+  const keys = [...new Set(visible.filter((r2) => r2.source_id !== "futgg_catalogue" && /^\d{1,10}$/.test(String(r2.source_card_key ?? ""))).map((r2) => String(r2.source_card_key)))];
+  const catalogue2 = /* @__PURE__ */ new Map();
+  if (keys.length) {
+    const { data, error: e } = await db.from("player_cards").select("id, source_card_key").eq("source_id", "futgg_catalogue").is("owner_user_id", null).in("source_card_key", keys);
+    fail(e);
+    for (const r2 of data ?? []) catalogue2.set(String(r2.source_card_key), r2.id);
+  }
+  const roleCard = /* @__PURE__ */ new Map();
+  for (const r2 of visible) roleCard.set(r2.id, r2.source_id === "futgg_catalogue" ? r2.id : catalogue2.get(String(r2.source_card_key)) ?? r2.id);
+  const lookup = [...new Set(roleCard.values())];
+  const { data: roles, error: re } = await db.from("card_roles").select("card_id, position_code, role, level").in("card_id", lookup);
+  fail(re);
+  const byCard = /* @__PURE__ */ new Map();
+  for (const r2 of roles ?? []) {
+    const list = byCard.get(r2.card_id) ?? [];
+    list.push({ position: r2.position_code, role: r2.role, level: r2.level });
+    byCard.set(r2.card_id, list);
+  }
+  for (const s of squad.slots) {
+    if (!s.card) continue;
+    const all = byCard.get(roleCard.get(s.card.id) ?? "") ?? [];
+    out[s.slot] = {
+      position: s.position,
+      roles: all.filter((r2) => r2.position === s.position).sort((a, b) => a.level === b.level ? a.role.localeCompare(b.role) : a.level === "plusplus" ? -1 : 1)
+    };
+  }
+  return out;
 }
 
 // supabase/functions/_shared/fut/objectives.ts
@@ -15664,27 +15775,27 @@ function parseRequirement(name2, meta) {
   for (const re of patterns) {
     const m = text2.match(re);
     if (!m) continue;
-    const n = count(m[1]);
+    const n2 = count(m[1]);
     const r2 = resolve(m[2], meta);
-    if (r2 && n >= 1 && n <= 11) return { req: { count: n, ...r2, starting }, reason: null };
+    if (r2 && n2 >= 1 && n2 <= 11) return { req: { count: n2, ...r2, starting }, reason: null };
     if (!r2) return { req: null, reason: `GafferBot couldn't match "${m[2].trim()}" to a league, nation, club or card type in your club.` };
   }
   return { req: null, reason: /players?/i.test(text2) ? "No player requirement GafferBot can read in this objective." : null };
 }
 var modeOf = (o) => MODES.find(([re]) => re.test(`${o.name} ${o.group ?? ""}`))?.[1] ?? null;
-var meets = (c2, r2) => r2.kind === "icon" ? c2.card.is_icon === true : r2.kind === "hero" ? c2.card.is_hero === true : norm8(String((r2.kind === "version" ? c2.version : c2.card[r2.kind]) ?? "")) === norm8(r2.value);
-var plays3 = (c2, position) => c2.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+var meets = (c4, r2) => r2.kind === "icon" ? c4.card.is_icon === true : r2.kind === "hero" ? c4.card.is_hero === true : norm8(String((r2.kind === "version" ? c4.version : c4.card[r2.kind]) ?? "")) === norm8(r2.value);
+var plays3 = (c4, position) => c4.positions.some((p) => p.toUpperCase() === position.toUpperCase());
 function planObjectives(objectives, pool, formation, rules, base) {
   const meta = {
-    leagues: [...new Set(pool.map((c2) => c2.card.league).filter((x) => !!x))],
-    nations: [...new Set(pool.map((c2) => c2.card.nation).filter((x) => !!x))],
-    clubs: [...new Set(pool.map((c2) => c2.card.club).filter((x) => !!x))],
-    versions: [...new Set(pool.map((c2) => c2.version).filter((x) => !!x))]
+    leagues: [...new Set(pool.map((c4) => c4.card.league).filter((x) => !!x))],
+    nations: [...new Set(pool.map((c4) => c4.card.nation).filter((x) => !!x))],
+    clubs: [...new Set(pool.map((c4) => c4.card.club).filter((x) => !!x))],
+    versions: [...new Set(pool.map((c4) => c4.version).filter((x) => !!x))]
   };
   const open = objectives.filter((o) => !o.done);
   const parsed = open.map((o) => ({ o, ...parseRequirement(o.name, meta) })).sort((a, b) => (a.o.end_at ?? "~").localeCompare(b.o.end_at ?? "~") || (b.o.xp ?? 0) - (a.o.xp ?? 0));
-  const byId = new Map(pool.map((c2) => [c2.card.id, c2]));
-  const start = bestSquadFor(base, formation, pool.map((c2) => c2.card), rules, "ovr");
+  const byId = new Map(pool.map((c4) => [c4.card.id, c4]));
+  const start = bestSquadFor(base, formation, pool.map((c4) => c4.card), rules, "ovr");
   const slots = start.squad.slots.map((s) => ({ ...s }));
   const protectedIds = /* @__PURE__ */ new Set();
   const results = /* @__PURE__ */ new Map();
@@ -15703,13 +15814,13 @@ function planObjectives(objectives, pool, formation, rules, base) {
     while (matching().length < req.count) {
       const taken = inXi(), takenNames = names();
       let best = null;
-      for (const c2 of pool) {
-        if (!meets(c2, req) || taken.has(c2.card.id) || takenNames.has(norm8(c2.card.name))) continue;
+      for (const c4 of pool) {
+        if (!meets(c4, req) || taken.has(c4.card.id) || takenNames.has(norm8(c4.card.name))) continue;
         slots.forEach((s, i) => {
-          if (s.locked || !plays3(c2.card, s.position)) return;
+          if (s.locked || !plays3(c4.card, s.position)) return;
           if (s.card && (protectedIds.has(s.card.id) || meets(byId.get(s.card.id) ?? { card: s.card, version: null }, req))) return;
-          const loss = (s.card?.rating ?? 0) - (c2.card.rating ?? 0);
-          if (!best || loss < best.loss) best = { i, c: c2, loss };
+          const loss = (s.card?.rating ?? 0) - (c4.card.rating ?? 0);
+          if (!best || loss < best.loss) best = { i, c: c4, loss };
         });
       }
       if (!best) break;
@@ -15723,7 +15834,7 @@ function planObjectives(objectives, pool, formation, rules, base) {
       results.set(p.o, { ...base0, status: "covered", players: have.slice(0, req.count).map((s) => s.card.name), note: added.length ? `Swapped in ${added.join(", ")}.` : "Your best XI already has them." });
     } else {
       slots.splice(0, slots.length, ...snapshot);
-      const total = pool.filter((c2) => meets(c2, req)).length;
+      const total = pool.filter((c4) => meets(c4, req)).length;
       results.set(p.o, { ...base0, status: "short", players: [], note: total < req.count ? `You have ${total} ${req.value} card${total === 1 ? "" : "s"}; it needs ${req.count}.` : `Your ${req.value} cards don't fit this formation's positions alongside the other objectives.` });
     }
   }
@@ -15768,7 +15879,7 @@ async function objectivesPlan(db, userId, platform, b) {
   const note = "Requirements read from the objective's wording (EA's FC 27 wording is unverified); objectives about goals, wins or modes only need you to play. Your best-overall XI is the starting point. Nothing is played or claimed.";
   if (!objectives.length) return { platform, source, seen_at: seenAt, club_cards: mine.length, formation, squad: null, rating: null, chemistry: null, covered: 0, open: 0, done: 0, headline: source === "helper" ? "No objectives from the helper yet. Open Objectives in the EA Web App with the helper on, or paste them." : "No objectives.", objectives: [], note, verified: false };
   if (!mine.length) throw new FutError("You have no club cards yet. Sync your club first.");
-  const plan = planObjectives(objectives, mine.map((c2) => ({ card: toWorkspaceCard(c2), version: c2.version })), formation, rules, base);
+  const plan = planObjectives(objectives, mine.map((c4) => ({ card: toWorkspaceCard(c4), version: c4.version })), formation, rules, base);
   return { platform, source, seen_at: seenAt, club_cards: mine.length, ...plan, note, verified: false };
 }
 
@@ -15776,12 +15887,12 @@ async function objectivesPlan(db, userId, platform, b) {
 var MODES2 = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
 var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
-var pct5 = (n, d) => d ? Math.round(n / d * 100) : null;
+var pct5 = (n2, d) => d ? Math.round(n2 / d * 100) : null;
 function summarize3(games, run2) {
   const list = [...games].sort((a, b) => a.played_at.localeCompare(b.played_at));
   const res = list.map(result);
   const w = res.filter((r2) => r2 === "W").length, d = res.filter((r2) => r2 === "D").length, l = res.filter((r2) => r2 === "L").length;
-  const gf = list.reduce((n, g) => n + g.goals_for, 0), ga = list.reduce((n, g) => n + g.goals_against, 0);
+  const gf = list.reduce((n2, g) => n2 + g.goals_for, 0), ga = list.reduce((n2, g) => n2 + g.goals_against, 0);
   let best = 0, cur = 0;
   for (const r2 of res) {
     cur = r2 === "W" ? cur + 1 : 0;
@@ -15868,6 +15979,2816 @@ async function champsOverview(db, userId, platform) {
   return { platform, runs: out, by_mode: byMode, formations: [...FORMATION_NAMES2], note: "Games you logged yourself. Nothing is read from EA." };
 }
 
+// supabase/functions/_shared/fut/card-compare.ts
+var SHOWN = ALL_STATS.filter((s) => !["overall", "total_stats", "total_igs"].includes(s.key)).map((s) => ({ key: s.key, label: s.label, group: s.group }));
+function compareTable(cards) {
+  const positions = cards.map((c4) => c4.meta.positions).reduce((a, b) => a.filter((p) => b.includes(p)));
+  const boosted = cards.map((c4) => {
+    const styles = c4.meta.positions[0] === "GK" ? GK_CHEM_STYLES : CHEM_STYLES;
+    const boost = c4.chem_style ? styles[c4.chem_style] ?? {} : {};
+    const stats = { ...c4.meta.stats };
+    for (const [k, v] of Object.entries(boost)) if (typeof stats[k] === "number") stats[k] = Math.min(99, stats[k] + v);
+    return { ...c4.meta, stats };
+  });
+  const rows = SHOWN.map((s) => {
+    const values = boosted.map((m) => s.key === "weak_foot" ? m.weak_foot : s.key === "skill_moves" ? m.skill_moves : s.key === "height_cm" ? m.height_cm : m.stats[s.key] ?? null);
+    const known = values.filter((v) => typeof v === "number");
+    const best = known.length >= 2 ? Math.max(...known) : null;
+    return { ...s, values, leaders: best === null || known.every((v) => v === best) ? [] : values.map((v, i) => v === best ? i : -1).filter((i) => i >= 0) };
+  }).filter((r2) => r2.values.some((v) => v !== null));
+  const all = (c4) => [...c4.playstyles_plus.map((p) => `${p}+`), ...c4.playstyles.filter((p) => !c4.playstyles_plus.includes(p))];
+  const sets = cards.map((c4) => /* @__PURE__ */ new Set([...c4.meta.playstyles, ...c4.meta.playstyles_plus]));
+  const shared = [...sets[0]].filter((p) => sets.every((s) => s.has(p))).sort();
+  const results = cards.map((c4, i) => {
+    const best = metaRate(c4.meta, positions.length ? positions : c4.meta.positions, c4.chem_style).best;
+    return {
+      id: c4.id,
+      name: c4.meta.name,
+      rating: c4.meta.rating,
+      version: c4.version,
+      positions: c4.meta.positions,
+      ea_item_id: c4.ea_item_id,
+      owned: c4.owned,
+      chem_style: c4.chem_style,
+      price: c4.price,
+      playstyles: all(c4.meta),
+      only_this: [...sets[i]].filter((p) => !shared.includes(p)).sort(),
+      meta: best,
+      wins: rows.filter((row3) => row3.leaders.length === 1 && row3.leaders[0] === i).length,
+      price_per_rating: c4.price && c4.meta.rating ? Math.round(c4.price / c4.meta.rating) : null,
+      price_per_meta: c4.price && best ? Math.round(c4.price / best.score) : null
+    };
+  });
+  const scored = results.filter((r2) => r2.meta);
+  const top = scored.length ? scored.reduce((a, b) => b.meta.score > a.meta.score ? b : a) : null;
+  const cheapest = results.filter((r2) => r2.price).sort((a, b) => a.price - b.price)[0] ?? null;
+  const summary = !top ? "Not enough stats to compare." : `${top.name} plays best${positions.length ? ` at ${top.meta.position}` : ""} (${top.meta.role}, ${top.meta.score})` + (cheapest && cheapest.id !== top.id && top.price && cheapest.price ? `; ${cheapest.name} is ${Math.round((1 - cheapest.price / top.price) * 100)}% cheaper at ${cheapest.meta?.score ?? "?"}.` : ".");
+  return { shared_positions: positions, shared_playstyles: shared, cards: results, rows, summary };
+}
+async function compareAnyCards(db, userId, b) {
+  const ids = Array.isArray(b.card_ids) ? [...new Set(b.card_ids.map(String))] : [];
+  if (ids.length < 2 || ids.length > 4) throw new FutError("card_ids must list 2 to 4 different cards.");
+  const styles = b.chem_styles ?? {};
+  const platform = b.platform === "pc" ? "pc" : "console";
+  const loaded = await Promise.all(ids.map((id) => loadMetaCard(db, userId, id)));
+  const eaIds = [...new Set(loaded.map((l) => l.card.ea_item_id).filter((x) => !!x))];
+  const prices = /* @__PURE__ */ new Map();
+  if (eaIds.length) {
+    const { data, error } = await db.rpc("account_item_prices", { p_platform: platform, p_ids: eaIds });
+    if (error) throw new FutError(`Card prices are unavailable: ${error.message}`, 500);
+    for (const i of data?.items ?? []) if (typeof i.price === "number") prices.set(Number(i.ea_item_id), i.price);
+  }
+  const inputs = loaded.map(({ card, meta }) => {
+    const want = styles[card.id], gk = meta.positions[0] === "GK";
+    const list = gk ? GK_CHEM_STYLES : CHEM_STYLES;
+    if (want !== void 0 && want !== null && want !== "" && !(typeof want === "string" && want in list)) throw new FutError(`Unknown chem style for ${card.player_name}. Use one of ${Object.keys(list).join(", ")}.`);
+    return { id: card.id, meta, version: card.version, owned: card.owned, ea_item_id: card.ea_item_id, price: card.ea_item_id ? prices.get(card.ea_item_id) ?? null : card.price, chem_style: typeof want === "string" && want ? want : null };
+  });
+  return { platform, ...compareTable(inputs), chem_styles: { outfield: Object.keys(CHEM_STYLES), gk: Object.keys(GK_CHEM_STYLES) }, note: "Chem style boosts and metaratings are GafferBot's estimates (FC 27's chem style numbers aren't confirmed). Prices are FUT.GG's.", verified: false };
+}
+
+// supabase/functions/_shared/fut/current-squad.ts
+var fail5 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var MAX_GAME_SQUADS = 12;
+var FORMATION_CODES = {
+  f3142: "3-1-4-2",
+  f3412: "3-4-1-2",
+  f3421: "3-4-2-1",
+  f343: "3-4-3",
+  f352: "3-5-2",
+  f41212: "4-1-2-1-2",
+  f41212a: "4-1-2-1-2 (2)",
+  f4132: "4-1-3-2",
+  f4141: "4-1-4-1",
+  f4213: "4-2-1-3",
+  f4222: "4-2-2-2",
+  f4231: "4-2-3-1",
+  f4231a: "4-2-3-1 (2)",
+  f424: "4-2-4",
+  f4312: "4-3-1-2",
+  f4321: "4-3-2-1",
+  f433: "4-3-3",
+  f433a: "4-3-3 (2)",
+  f433b: "4-3-3 (3)",
+  f433c: "4-3-3 (4)",
+  f442: "4-4-2",
+  f442a: "4-4-2 (2)",
+  f451: "4-5-1",
+  f451a: "4-5-1 (2)",
+  f5212: "5-2-1-2",
+  f523: "5-2-3",
+  f532: "5-3-2",
+  f541: "5-4-1"
+};
+var digits = (s) => s.replace(/\(.*\)/, "").replace(/\D/g, "");
+var natural = (b) => b.squad.slots.filter((s) => s.card && s.card.positions[0] === s.position).length;
+function formationFor(code, eleven, rules) {
+  const fit = (f2) => bestSquadFor(createSquad({ formation: f2 }), f2, eleven, rules, "chem");
+  const better = (a, b) => a.filled - b.filled || a.chemistry - b.chemistry || natural(a) - natural(b);
+  const named2 = code ? FORMATION_CODES[code] ?? null : null;
+  const base = code ? digits(code) : "";
+  const family = base ? Object.keys(FORMATIONS).filter((f2) => digits(f2) === base) : [];
+  const first = named2 && FORMATIONS[named2] ? fit(named2) : null;
+  if (first && first.filled >= Math.min(11, eleven.length)) return { formation: named2, sure: true, best: first };
+  const tried = [...first ? [first] : [], ...family.filter((f2) => f2 !== named2).map(fit)];
+  if (tried.length) {
+    const top2 = tried.reduce((a, b) => better(b, a) > 0 ? b : a);
+    if (top2.filled >= Math.min(11, eleven.length)) return { formation: top2.formation, sure: top2.formation === named2 || family.length === 1, best: top2 };
+  }
+  const all = [...tried, ...Object.keys(FORMATIONS).filter((f2) => !tried.some((t) => t.formation === f2)).map(fit)];
+  const top = all.reduce((a, b) => better(b, a) > 0 ? b : a);
+  return first && top.filled <= first.filled ? { formation: named2, sure: true, best: first } : { formation: top.formation, sure: false, best: top };
+}
+var HOW = "To load your real one, update the XI Lab helper (0.13.0 or newer) and open your squad in the EA Web App.";
+async function currentSquad(db, userId, rules, pool) {
+  const [r2, mine, captured] = await Promise.all([
+    rules ?? activeRules(db),
+    pool ?? searchMyCards(db, userId, { all: true, owned_only: true }).then((cs) => cs.map(toWorkspaceCard)),
+    db.from("game_squads").select("*").eq("user_id", userId).order("seen_at", { ascending: false }).limit(MAX_GAME_SQUADS)
+  ]);
+  fail5(captured.error);
+  const rows = captured.data ?? [];
+  const row3 = rows.find((x) => x.active === true) ?? rows[0];
+  if (row3) {
+    const cards = await searchMyCards(db, userId, { all: true, owned_only: true });
+    const byEa = new Map(cards.filter((c4) => c4.ea_item_id).map((c4) => [c4.ea_item_id, toWorkspaceCard(c4)]));
+    const players = Array.isArray(row3.players) ? row3.players : [];
+    const starters = players.filter((p) => p.index <= 10), eleven = starters.flatMap((p) => byEa.get(p.ea_item_id) ?? []);
+    if (eleven.length) {
+      const f2 = formationFor(row3.formation_code ?? null, eleven, r2);
+      const missing = starters.length - eleven.length, left = eleven.length - f2.best.filled;
+      const base = createSquad({ formation: f2.formation, name: row3.name || "My current squad", owner_id: userId });
+      return {
+        source: "game",
+        squad: { ...base, slots: f2.best.squad.slots },
+        seen_at: row3.seen_at,
+        formation_code: row3.formation_code ?? null,
+        formation_sure: f2.sure,
+        missing,
+        bench: players.filter((p) => p.index > 10).flatMap((p) => {
+          const c4 = byEa.get(p.ea_item_id);
+          return c4 ? [{ id: c4.id, name: c4.name, rating: c4.rating ?? 0, positions: c4.positions }] : [];
+        }),
+        note: [
+          `Your ${row3.active ? "active squad" : "squad"} from the EA Web App.`,
+          f2.sure ? "" : "The formation was worked out from where your players play, so check it.",
+          missing ? `${missing} starter${missing === 1 ? " isn't" : "s aren't"} in your synced club yet: open your Club in the Web App to sync ${missing === 1 ? "it" : "them"}.` : "",
+          left ? `${left} player${left === 1 ? "" : "s"} couldn't be placed in a position they play.` : ""
+        ].filter(Boolean).join(" ")
+      };
+    }
+  }
+  const none = { seen_at: null, formation_code: null, formation_sure: true, missing: 0, bench: [] };
+  const saved = (await new PgSquadStore(db).list(userId)).filter((s) => s.slots.some((x) => x.card));
+  if (saved.length) {
+    const s = [...saved].sort((a, b) => String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? "")))[0];
+    return { ...none, source: "saved", squad: s, note: `Your in-game squad hasn't been captured yet, so this is your newest saved squad, "${s.name}". ${HOW}` };
+  }
+  if (mine.length) {
+    const best = bestSquads(createSquad({ formation: "4-2-3-1" }), "all", mine, r2, "ovr")[0];
+    const base = createSquad({ formation: best.formation, name: "My current squad", owner_id: userId });
+    return { ...none, source: "club", squad: { ...base, slots: best.squad.slots }, formation_sure: false, note: `Your in-game squad hasn't been captured yet, so this is the strongest eleven your club can field. ${HOW}` };
+  }
+  return { ...none, source: "none", squad: null, note: "You have no club cards yet. Sync your club with the XI Lab helper, or add cards on My cards." };
+}
+var rating = (slots) => {
+  const f2 = slots.filter((s) => s.card);
+  return f2.length ? Math.round(f2.reduce((a, s) => a + (s.card.rating ?? 0), 0) / f2.length) : 0;
+};
+var defaultTargets = (db, userId, platform) => async (position, maxPrice) => {
+  const top = await metaTop(db, userId, { position, platform, max_price: maxPrice });
+  return top.cards.map((c4) => ({
+    card_id: c4.card_id,
+    ea_item_id: c4.ea_item_id,
+    name: c4.name,
+    rating: c4.rating,
+    version: c4.version,
+    price: c4.price,
+    owned: c4.owned,
+    score: c4.meta.score,
+    role: c4.meta.role,
+    why: [c4.meta.strengths.slice(0, 2).join(", "), c4.meta.playstyles.slice(0, 2).join(", ")].filter(Boolean).join("; ")
+  }));
+};
+async function squadAdvice(db, userId, squad, pool, rules, opts, targets) {
+  const { by } = opts;
+  const now2 = evaluate(squad.formation, squad.slots, squad.manager, rules);
+  const chemOf = (slot) => now2.chem.players.find((p) => p.slot === slot);
+  let coins2 = null;
+  try {
+    const { data } = await db.from("account_state").select("balance").eq("user_id", userId).eq("platform", opts.platform).maybeSingle();
+    const n2 = Number(data?.balance?.coins);
+    coins2 = Number.isFinite(n2) ? n2 : null;
+  } catch (e) {
+    console.error("[fut-api] squad advisor coins:", e);
+  }
+  const pick = targets ?? defaultTargets(db, userId, opts.platform);
+  const inSquad = new Set(squad.slots.flatMap((s) => s.card ? [s.card.name.toLowerCase()] : []));
+  const positions = [...new Set(squad.slots.map((s) => s.position))];
+  const market = /* @__PURE__ */ new Map();
+  await Promise.all(positions.map(async (position) => {
+    try {
+      const fresh = (list) => list.filter((c4) => !c4.owned && !inSquad.has(c4.name.toLowerCase()));
+      const asTarget = (c4) => c4 ? { card_id: c4.card_id, ea_item_id: c4.ea_item_id, name: c4.name, rating: c4.rating, version: c4.version, price: c4.price, score: c4.score, role: c4.role, why: c4.why, affordable: coins2 === null || c4.price === null ? null : c4.price <= coins2 } : null;
+      const [afford, all] = await Promise.all([coins2 !== null ? pick(position, coins2) : Promise.resolve([]), pick(position, null)]);
+      const dream = asTarget(fresh(all)[0]), target = asTarget(fresh(afford)[0]);
+      market.set(position, { target, dream: dream && dream.card_id !== target?.card_id ? dream : null });
+    } catch (e) {
+      console.error(`[fut-api] squad advisor targets ${position}:`, e.message);
+      market.set(position, { target: null, dream: null });
+    }
+  }));
+  const handed = /* @__PURE__ */ new Map();
+  const slots = squad.slots.map((s) => {
+    const c4 = s.card, mine = chemOf(s.slot);
+    const picks = suggestForSlot(squad, s.slot, pool, rules, by, 4).suggestions.map((x) => ({
+      id: x.card.id,
+      name: x.card.name,
+      rating: x.card.rating ?? 0,
+      positions: x.card.positions,
+      chemistry: x.chemistry,
+      team_chemistry: x.team_chemistry,
+      change: x.change,
+      rating_change: c4 ? (x.card.rating ?? 0) - (c4.rating ?? 0) : null,
+      better: !c4 || (by === "ovr" ? (x.card.rating ?? 0) > (c4.rating ?? 0) || (x.card.rating ?? 0) === (c4.rating ?? 0) && x.change > 0 : x.change > 0 || x.change === 0 && (x.card.rating ?? 0) > (c4.rating ?? 0))
+    }));
+    const m = market.get(s.position) ?? { target: null, dream: null };
+    const nth = handed.get(s.position) ?? 0;
+    handed.set(s.position, nth + 1);
+    return {
+      slot: s.slot,
+      position: s.position,
+      current: c4 ? { id: c4.id, name: c4.name, rating: c4.rating ?? 0, chemistry: mine?.chemistry ?? 0, in_position: mine?.in_position !== false } : null,
+      picks,
+      target: nth === 0 ? m.target : null,
+      dream: nth === 0 ? m.dream : null
+    };
+  });
+  const eleven = squad.slots.flatMap((s) => s.card ? [s.card] : []);
+  const ids = new Set(eleven.map((c4) => c4.id));
+  const shape = (b) => ({
+    formation: b.formation,
+    chemistry: b.chemistry,
+    rating: rating(b.squad.slots),
+    filled: b.filled,
+    empty: b.empty,
+    squad: { ...squad, formation: b.formation, slots: b.squad.slots },
+    changes: b.squad.slots.filter((s) => s.card && !ids.has(s.card.id)).length,
+    current: b.formation === squad.formation
+  });
+  const unlocked = { ...squad, slots: squad.slots.map((s) => ({ ...s, locked: false })) };
+  const rearrange = eleven.length >= 2 ? bestSquads(unlocked, "all", eleven, rules, "chem").filter((b) => b.filled === eleven.length).sort((a, b) => b.chemistry - a.chemistry || Number(b.formation === squad.formation) - Number(a.formation === squad.formation) || natural(b) - natural(a)).slice(0, 5).map(shape) : [];
+  const club = pool.length ? bestSquads(squad, "all", pool, rules, by).slice(0, 5).map(shape) : [];
+  return {
+    by,
+    owned_cards: pool.length,
+    coins: coins2,
+    now: { formation: squad.formation, chemistry: now2.total, rating: rating(squad.slots), filled: eleven.length },
+    slots,
+    rearrange,
+    club
+  };
+}
+
+// supabase/functions/_shared/fut/upgrades.ts
+var EA_TAX5 = 0.05;
+var norm9 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var plays4 = (c4, position) => c4.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+var gainOf = (dRating, dChem, dMeta, dOverall = 0) => Math.round((dRating * 8 + dChem * 1.5 + (dMeta ?? 0) * 0.6 + dOverall * 0.25) * 10) / 10;
+function planUpgrades(x, limits = { singles: 15, pairs: 10, pairPool: 30 }) {
+  const { squad, rules, budget } = x;
+  const ratings = (slots) => slots.filter((s) => s.card).map((s) => s.card.rating ?? 0);
+  const base = evaluate(squad.formation, squad.slots, squad.manager, rules);
+  const before = { rating: teamRating(ratings(squad.slots)), chem: base.total };
+  const apply = (swaps) => {
+    const slots = squad.slots.map((s, i) => {
+      const w = swaps.find((x2) => x2.i === i);
+      return w ? { ...s, card: w.c.card } : s;
+    });
+    const names = slots.filter((s) => s.card).map((s) => norm9(s.card.name));
+    if (new Set(names).size !== names.length) return null;
+    const e = evaluate(squad.formation, slots, squad.manager, rules);
+    const after = { rating: teamRating(ratings(slots)), chem: e.total };
+    const out = swaps.map(({ i, c: c4 }) => {
+      const s = squad.slots[i];
+      return {
+        slot: s.slot,
+        position: s.position,
+        cost: c4.cost,
+        out: { id: s.card?.id ?? null, name: s.card?.name ?? null, rating: s.card?.rating ?? null, meta: x.currentMeta[s.slot] ?? null, sells_for: s.card ? x.sellValue[s.card.id] ?? null : null },
+        in: { id: c4.card.id, name: c4.card.name, rating: c4.card.rating ?? null, owned: c4.card.owned === true, meta: c4.meta[s.position] ?? null, card: c4.card }
+      };
+    });
+    const metaKnown = out.every((w) => w.in.meta !== null && (w.out.meta !== null || w.out.id === null));
+    const metaGain = metaKnown ? out.reduce((n2, w) => n2 + (w.in.meta - (w.out.meta ?? 0)), 0) : null;
+    const cost = out.reduce((n2, w) => n2 + w.cost, 0);
+    const dOverall = out.reduce((n2, w) => n2 + (w.in.rating ?? 0) - (w.out.rating ?? 0), 0);
+    const gain = gainOf(after.rating - before.rating, after.chem - before.chem, metaGain, dOverall);
+    return {
+      swaps: out,
+      cost,
+      net_cost: Math.max(0, cost - out.reduce((n2, w) => n2 + (w.out.sells_for ?? 0), 0)),
+      rating_before: before.rating,
+      rating_after: after.rating,
+      chem_before: before.chem,
+      chem_after: after.chem,
+      meta_gain: metaGain,
+      gain,
+      per_10k: cost > 0 ? Math.round(gain / cost * 1e4 * 10) / 10 : null
+    };
+  };
+  const singles = [];
+  squad.slots.forEach((s, i) => {
+    if (s.locked) return;
+    for (const c4 of x.candidates) {
+      if (c4.cost > budget || c4.card.id === s.card?.id || !plays4(c4.card, s.position)) continue;
+      const p = apply([{ i, c: c4 }]);
+      if (p && p.gain > 0) singles.push({ ...p, key: { i, c: c4 } });
+    }
+  });
+  const rank = (a, b) => b.gain - a.gain || a.cost - b.cost;
+  singles.sort(rank);
+  const pool = singles.slice(0, limits.pairPool), pairs = [];
+  for (let a = 0; a < pool.length; a++) for (let b = a + 1; b < pool.length; b++) {
+    const p1 = pool[a].key, p2 = pool[b].key;
+    if (p1.i === p2.i || norm9(p1.c.card.name) === norm9(p2.c.card.name) || p1.c.cost + p2.c.cost > budget) continue;
+    const p = apply([p1, p2]);
+    if (p && p.gain > Math.max(pool[a].gain, pool[b].gain)) pairs.push(p);
+  }
+  pairs.sort(rank);
+  const strip = ({ key: _k, ...p }) => p;
+  const seen = /* @__PURE__ */ new Map(), shown = [];
+  for (const p of singles) {
+    const k = p.swaps[0].slot;
+    const n2 = seen.get(k) ?? 0;
+    if (n2 < 2) {
+      shown.push(strip(p));
+      seen.set(k, n2 + 1);
+    }
+    if (shown.length >= limits.singles) break;
+  }
+  const best = [...pairs.slice(0, 1), ...shown.slice(0, 1)].sort(rank)[0] ?? null;
+  const free = singles.filter((p) => p.cost === 0).slice(0, 5).map(strip);
+  return { before, budget, best, singles: shown, pairs: pairs.slice(0, limits.pairs), free };
+}
+
+// supabase/functions/_shared/fut/upgrades-data.ts
+var MAX_BUDGET = 15e6;
+var PER_POSITION = 40;
+async function upgradeOptions(db, userId, squad, b) {
+  const budget = Number(b.budget);
+  if (!Number.isInteger(budget) || budget < 0 || budget > MAX_BUDGET) throw new FutError(`budget must be whole coins from 0 to ${MAX_BUDGET.toLocaleString("en-US")}.`);
+  const platform = b.platform === "pc" ? "pc" : "console";
+  if (!squad.slots.some((s) => s.card)) throw new FutError("Put some cards in the squad first.");
+  const positions = [...new Set(squad.slots.filter((s) => !s.locked).map((s) => s.position.toUpperCase()))];
+  const [rules, mine] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true })]);
+  const inSquad = new Set(squad.slots.filter((s) => s.card).map((s) => s.card.id));
+  const candidates = /* @__PURE__ */ new Map();
+  for (const pos of positions) {
+    const weakest = Math.min(...squad.slots.filter((s) => s.position.toUpperCase() === pos).map((s) => s.card?.rating ?? 0));
+    const query = cleanPlayerQuery({ positions: [pos], priced_only: true, max_price: Math.max(budget, 1), min_rating: weakest > 0 ? weakest : null, sort: "overall" });
+    const res = await searchPlayers(db, userId, query, { platform, limit: PER_POSITION });
+    for (const c4 of res.cards) {
+      if (candidates.has(String(c4.id)) || typeof c4.price !== "number") continue;
+      const m = fromSearch(c4);
+      const meta = Object.fromEntries(m.positions.map((p) => [p.toUpperCase(), metaRate(m, [p]).best?.score ?? 0]).filter(([, v]) => v));
+      const card = { id: String(c4.id), name: m.name, club: c4.club ?? null, league: c4.league ?? null, nation: c4.nation ?? null, positions: m.positions, is_icon: c4.is_icon === true, is_hero: c4.is_hero === true, rating: m.rating, price: c4.price, owned: c4.owned === true, stats: {}, source: "database" };
+      candidates.set(card.id, { card, cost: c4.owned === true ? 0 : c4.price, meta });
+    }
+  }
+  for (const c4 of mine) {
+    if (inSquad.has(c4.id) || !c4.positions.some((p) => positions.includes(p.toUpperCase()))) continue;
+    const m = { name: c4.player_name, rating: c4.overall, positions: c4.positions, stats: { ...c4.stats }, playstyles: c4.playstyles, playstyles_plus: c4.playstyles_plus, height_cm: null, accelerate_type: null, weak_foot: c4.weak_foot, skill_moves: c4.skill_moves };
+    candidates.set(c4.id, { card: toWorkspaceCard(c4), cost: 0, meta: Object.fromEntries(c4.positions.map((p) => [p.toUpperCase(), metaRate(m, [p]).best?.score ?? 0])) });
+  }
+  const currentMeta = {}, sellValue = {};
+  const owned = new Map(mine.map((c4) => [c4.id, c4]));
+  const eaIds = [];
+  await Promise.all(squad.slots.map(async (s) => {
+    if (!s.card) return;
+    try {
+      const { meta } = await loadMetaCard(db, userId, s.card.id);
+      currentMeta[s.slot] = metaRate(meta, [s.position]).best?.score ?? null;
+    } catch {
+      currentMeta[s.slot] = null;
+    }
+    const o = owned.get(s.card.id);
+    if (o && o.tradeable !== false && o.ea_item_id) eaIds.push(o.ea_item_id);
+  }));
+  if (eaIds.length) {
+    const { data, error } = await db.rpc("account_item_prices", { p_platform: platform, p_ids: [...new Set(eaIds)] });
+    if (!error) {
+      const price = new Map((data?.items ?? []).map((i) => [Number(i.ea_item_id), i.price]));
+      for (const s of squad.slots) {
+        const o = s.card ? owned.get(s.card.id) : void 0;
+        const p = o?.ea_item_id ? price.get(o.ea_item_id) : null;
+        if (o && o.tradeable !== false && typeof p === "number") sellValue[o.id] = Math.floor(p * (1 - EA_TAX5));
+      }
+    }
+  }
+  return {
+    platform,
+    candidates: candidates.size,
+    ...planUpgrades({ squad, rules, budget, candidates: [...candidates.values()], currentMeta, sellValue }),
+    note: "Market cards at FUT.GG's latest prices; your unused club cards cost nothing. Team rating uses the community formula, metaratings are GafferBot's estimates. Nothing is bought.",
+    verified: false
+  };
+}
+
+// supabase/functions/_shared/fut/futgg-live.ts
+var ROOT = "https://r2.fut.gg/27";
+var FILES = { console: "player-prices-ps5-dyn", pc: "player-prices-pc-dyn" };
+var MANIFEST_TTL = 5 * 6e4;
+var MAX_PRICE = 15e6;
+var defaultFetch = (u) => fetch(u, { headers: { Accept: "application/json", "User-Agent": "XI-Lab-Market-Collector/1.0" }, signal: AbortSignal.timeout(15e3) });
+var cache = { prices: {} };
+async function getJson(fetcher, url) {
+  const res = await fetcher(url);
+  if (!res.ok) throw new Error(`FUT.GG ${res.status}`);
+  const body = await res.json();
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("FUT.GG sent an unexpected file");
+  return body;
+}
+function fileUrl(manifest, name2) {
+  const hash = manifest[name2], version = manifest._version;
+  if (!Number.isSafeInteger(version) || typeof hash !== "string" || !/^[a-f0-9]+$/.test(hash)) throw new Error(`FUT.GG manifest has no ${name2}`);
+  return { url: `${ROOT}/${name2}.v${version}.${hash}.json`, hash };
+}
+function decodeIndex(index) {
+  const d = index.d;
+  if (index.v !== 2 || !Number.isSafeInteger(index.id0) || !Array.isArray(d)) throw new Error("Unexpected FUT.GG index format");
+  const ids = [Number(index.id0)];
+  for (const delta of d) {
+    if (!Number.isSafeInteger(delta) || Number(delta) <= 0) throw new Error("Invalid FUT.GG card id");
+    ids.push(ids[ids.length - 1] + Number(delta));
+  }
+  return ids;
+}
+function decodePrices(ids, blob) {
+  const p = blob.p, s = blob.s;
+  if (blob.v !== 2 || !Array.isArray(p) || !Array.isArray(s) || p.length !== ids.length || s.length !== ids.length) throw new Error("FUT.GG price file doesn't match its index");
+  const out = /* @__PURE__ */ new Map();
+  for (let i = 0; i < ids.length; i++) {
+    const price = p[i], status = s[i];
+    if (status === 0 && Number.isSafeInteger(price) && price >= 1 && price <= MAX_PRICE) out.set(ids[i], price);
+  }
+  return out;
+}
+async function liveFutggPrices(platform, fetcher = defaultFetch, now2 = Date.now()) {
+  try {
+    if (!cache.manifest || now2 - cache.manifest.at > MANIFEST_TTL) cache.manifest = { at: now2, value: await getJson(fetcher, `${ROOT}/manifest.json`) };
+    const manifest = cache.manifest.value, name2 = FILES[platform];
+    const file = fileUrl(manifest, name2), idx = fileUrl(manifest, "player-prices-index");
+    const key = `${idx.hash}:${file.hash}`;
+    const hit = cache.prices[platform];
+    if (hit?.hash === key) return hit.value;
+    if (cache.index?.hash !== idx.hash) cache.index = { hash: idx.hash, ids: decodeIndex(await getJson(fetcher, idx.url)) };
+    const prices = decodePrices(cache.index.ids, await getJson(fetcher, file.url));
+    const stamp = Number(manifest._published_at?.[name2]);
+    if (!Number.isFinite(stamp) || stamp <= 0) throw new Error("FUT.GG manifest has no publish time");
+    const value = { platform, at: new Date(stamp * 1e3).toISOString(), prices };
+    cache.prices[platform] = { hash: key, value };
+    return value;
+  } catch (e) {
+    console.warn("live FUT.GG prices unavailable:", e instanceof Error ? e.message : String(e));
+    cache.manifest = void 0;
+    return null;
+  }
+}
+
+// supabase/functions/_shared/fut/strategy-model.ts
+var HORIZON_H = 96;
+var WINDOW_DAYS = 30;
+var MIN_RESULTS = 30;
+var SMOOTH = 10;
+var FEATURE_LABEL = { kind: "Card type", band: "Price", discount: "Discount", bounce: "Bounce", trend: "3-day trend", weekday: "Day picked" };
+var priceBand = (p) => p < 5e3 ? "under 5k" : p < 2e4 ? "5k to 20k" : p < 1e5 ? "20k to 100k" : "100k+";
+var discountBand = (d) => d < 0.08 ? "5 to 8% under" : d < 0.12 ? "8 to 12% under" : "12%+ under";
+var bounceBand = (rising, falling) => rising >= 1 ? "bounced" : falling === 0 ? "flat" : "still dipping";
+var trendBand = (change72) => change72 === null ? "unknown" : change72 < -20 ? "crashing" : change72 < -8 ? "falling" : "steady";
+function cleanSeries(c4, gapH = 6) {
+  const n2 = c4.prices.length;
+  if (n2 < 2 || c4.ages.length !== n2) return c4;
+  const keep = [n2 - 1];
+  for (let i = n2 - 2; i >= 0; i--) if (c4.ages[i] - c4.ages[keep[keep.length - 1]] >= gapH - 1e-9) keep.push(i);
+  keep.reverse();
+  const raw = keep.map((i) => c4.prices[i]), prices = [...raw];
+  for (let i = 1; i < raw.length - 1; i++) {
+    const a = raw[i - 1], b = raw[i + 1], x = raw[i];
+    if (x > 1.8 * Math.max(a, b) || x * 1.8 < Math.min(a, b)) prices[i] = [a, x, b].sort((u, v) => u - v)[1];
+  }
+  return { ...c4, prices, ages: keep.map((i) => c4.ages[i]) };
+}
+var MOVE_AHEAD_H = 48;
+var MOVE_MIN = 30;
+var MOVE_KEEP = 8;
+var SHRINK = 40;
+var moveBand = (d) => d >= 0.12 ? "12%+ under" : d >= 0.08 ? "8 to 12% under" : d >= 0.05 ? "5 to 8% under" : d > -0.05 ? "near usual" : d > -0.15 ? "5 to 15% over" : "15%+ over";
+var moveKeys = (f2) => {
+  const d = moveBand(f2.discount), b = bounceBand(f2.rising, f2.falling), k = `${d}|${b}|${f2.kind}`;
+  return f2.price ? [d, `${d}|${b}`, k, `${k}|${priceBand(f2.price)}`] : [d, `${d}|${b}`, k];
+};
+var r3 = (v) => Math.round(v * 1e3) / 1e3;
+function fitMoves(ex) {
+  const bucket = (xs) => {
+    const peaks = xs.map((x) => x.peak).sort((a, b) => a - b), rets = xs.map((x) => x.ret24).sort((a, b) => a - b);
+    return {
+      n: xs.length,
+      up24: r3(xs.filter((x) => x.ret24 > 5e-3).length / xs.length),
+      down24: r3(xs.filter((x) => x.ret24 < -5e-3).length / xs.length),
+      ret24: r3(xs.reduce((t, x) => t + x.ret24, 0) / xs.length),
+      r24: Array.from({ length: 11 }, (_, k) => r3(quantile2(rets, k / 10))),
+      peak: Array.from({ length: 11 }, (_, k) => r3(quantile2(peaks, k / 10)))
+    };
+  };
+  const groups = /* @__PURE__ */ new Map();
+  for (const x of ex) for (const k of x.keys) {
+    const g = groups.get(k);
+    if (g) g.push(x);
+    else groups.set(k, [x]);
+  }
+  const by = {};
+  for (const [k, xs] of groups) if (xs.length >= MOVE_KEEP) by[k] = bucket(xs);
+  return { overall: bucket(ex), by };
+}
+function blendSpot(m, f2) {
+  let cur = m.overall, key = "all", n2 = m.overall.n;
+  for (const k of moveKeys(f2)) {
+    const b = m.by[k];
+    if (!b) break;
+    const w = b.n / (b.n + SHRINK), mix = (x, y) => r3(w * x + (1 - w) * y);
+    cur = {
+      n: b.n,
+      up24: mix(b.up24, cur.up24),
+      down24: mix(b.down24, cur.down24),
+      ret24: mix(b.ret24, cur.ret24),
+      r24: b.r24.map((v, i) => mix(v, cur.r24[i])),
+      peak: b.peak.map((v, i) => mix(v, cur.peak[i]))
+    };
+    key = k;
+    n2 = b.n;
+  }
+  return { b: cur, key, n: n2 };
+}
+function learnMoves(cards) {
+  const ex = [];
+  let history = 0, used = 0;
+  for (const c4 of cards) {
+    const n2 = c4.prices.length;
+    if (n2 < 4 || c4.ages.length !== n2) continue;
+    history = Math.max(history, c4.ages[0]);
+    let any = false;
+    for (let i = 2; i < n2 - 1; i++) {
+      const p = c4.prices[i], at2 = c4.ages[i];
+      if (p < 1e3) continue;
+      const before = [];
+      for (let k = 0; k <= i; k++) if (c4.ages[k] - at2 <= 168) before.push(c4.prices[k]);
+      if (before.length < 3 || c4.ages[0] - at2 < 20) continue;
+      let peak = -Infinity, ret24 = null, gap24 = Infinity, span = 0;
+      for (let j = i + 1; j < n2; j++) {
+        const ahead = at2 - c4.ages[j];
+        if (ahead <= 0 || ahead > MOVE_AHEAD_H + 0.5) continue;
+        peak = Math.max(peak, c4.prices[j]);
+        span = Math.max(span, ahead);
+        if (Math.abs(ahead - 24) <= 6 && Math.abs(ahead - 24) < gap24) {
+          gap24 = Math.abs(ahead - 24);
+          ret24 = c4.prices[j] / p - 1;
+        }
+      }
+      if (ret24 === null || span < 20) continue;
+      let rising = 0, falling = 0;
+      for (let k = i; k > 0 && c4.prices[k] > c4.prices[k - 1]; k--) rising++;
+      for (let k = i; k > 0 && c4.prices[k] < c4.prices[k - 1]; k--) falling++;
+      const s = [...before].sort((a, b) => a - b), m = s.length >> 1, med = s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      ex.push({ keys: moveKeys({ discount: (med - p) / med, rising, falling, kind: c4.kind, price: p }), at: at2, ret24, peak: peak / p - 1 });
+      any = true;
+    }
+    if (any) used++;
+  }
+  if (ex.length < MOVE_MIN) return null;
+  let check = null;
+  const ages = [...new Set(ex.map((x) => x.at))].sort((a, b) => a - b);
+  const cut2 = ages[Math.max(0, Math.floor(ages.length * 0.25) - 1)];
+  if (cut2 !== void 0 && ages.length >= 2) {
+    const test = ex.filter((x) => x.at <= cut2), train = ex.filter((x) => x.at > cut2);
+    if (test.length >= MOVE_MIN && train.length >= MOVE_MIN) {
+      const fit2 = fitMoves(train), base = reachChance(fit2.overall, PAY_RISE);
+      let brier = 0, baseBrier = 0, hit = 0;
+      for (const x of test) {
+        const p = reachChance(blendFromKeys(fit2, x.keys), PAY_RISE), pays = x.peak >= PAY_RISE ? 1 : 0;
+        brier += (p - pays) ** 2;
+        baseBrier += (base - pays) ** 2;
+        if (p >= 0.5 === (pays === 1)) hit++;
+      }
+      brier /= test.length;
+      baseBrier /= test.length;
+      check = { n: test.length, brier: r3(brier), base_brier: r3(baseBrier), skill: r3(baseBrier > 0 ? 1 - brier / baseBrier : 0), hit: r3(hit / test.length) };
+    }
+  }
+  const fit = fitMoves(ex);
+  const trust = check ? r3(clampN(check.skill / 0.05, 0, 1)) : 0.5;
+  return { n: ex.length, cards: used, history_h: history, ...fit, check, trust };
+}
+function blendFromKeys(m, keys) {
+  let cur = m.overall;
+  for (const k of keys) {
+    const b = m.by[k];
+    if (!b) break;
+    const w = b.n / (b.n + SHRINK), mix = (x, y) => w * x + (1 - w) * y;
+    cur = {
+      n: b.n,
+      up24: mix(b.up24, cur.up24),
+      down24: mix(b.down24, cur.down24),
+      ret24: mix(b.ret24, cur.ret24),
+      r24: b.r24.map((v, i) => mix(v, cur.r24[i])),
+      peak: b.peak.map((v, i) => mix(v, cur.peak[i]))
+    };
+  }
+  return cur;
+}
+var PAY_RISE = 0.06;
+function reachChance(b, rise) {
+  const q = b.peak;
+  if (rise <= q[0]) return 1;
+  if (rise > q[10]) return 0;
+  for (let k = 1; k <= 10; k++) if (rise <= q[k]) {
+    const lo = q[k - 1], hi = q[k];
+    return 1 - (k - 1 + (hi > lo ? (rise - lo) / (hi - lo) : 1)) / 10;
+  }
+  return 0;
+}
+function moveBucket(m, f2) {
+  if (!m) return null;
+  const r2 = blendSpot(m, f2);
+  return r2.key === "all" ? null : r2;
+}
+function forecast24(m, f2) {
+  const hit = moveBucket(m, f2);
+  if (!hit || !hit.b.r24) return null;
+  const at2 = (r2) => Math.round(f2.price * (1 + r2));
+  return { low: at2(hit.b.r24[1]), mid: at2(hit.b.r24[5]), high: at2(hit.b.r24[9]), up: hit.b.up24, n: hit.n };
+}
+var quantile2 = (xs, q) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), i = (s.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+};
+var clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+var pc = (v) => Math.round(v * 100);
+function buckets(rows, key, win, overall) {
+  const out = {};
+  for (const r2 of rows) {
+    const k = key(r2);
+    if (!k) continue;
+    const b = out[k] ??= { n: 0, wins: 0, rate: 0, factor: 1 };
+    b.n++;
+    if (win(r2)) b.wins++;
+  }
+  for (const b of Object.values(out)) {
+    const smoothed = (b.wins + SMOOTH * overall) / (b.n + SMOOTH);
+    b.rate = Math.round(b.wins / b.n * 1e3) / 1e3;
+    b.factor = overall > 0 ? Math.round(clampN(smoothed / overall, 0.5, 1.6) * 1e3) / 1e3 : 1;
+  }
+  return out;
+}
+function learnModel(platform, all, now2, moves = null) {
+  const rows = all.filter((r2) => Date.parse(r2.picked_at) <= now2 - HORIZON_H * 36e5);
+  const buys = rows.filter((r2) => r2.side === "buy" && (r2.outcome === "hit" || r2.outcome === "miss"));
+  const sells = rows.filter((r2) => r2.side === "sell" && (r2.outcome === "good" || r2.outcome === "bad"));
+  const hits = buys.filter((r2) => r2.outcome === "hit");
+  const rate = buys.length ? hits.length / buys.length : null;
+  const ready = buys.length >= MIN_RESULTS;
+  const factors = {};
+  if (rate !== null) for (const f2 of Object.keys(FEATURE_LABEL)) {
+    factors[f2] = buckets(buys, (r2) => r2.features[f2], (r2) => r2.outcome === "hit", rate);
+  }
+  const reaches = buys.flatMap((r2) => r2.best_price != null && r2.target > r2.price ? [(r2.best_price - r2.price) / (r2.target - r2.price)] : []);
+  const q = quantile2(reaches, 0.4);
+  const reach = ready && q !== null ? Math.round(clampN(q, 0.5, 1) * 100) / 100 : 1;
+  const rate_at_reach = reaches.length ? Math.round(reaches.filter((x) => x >= reach).length / reaches.length * 1e3) / 1e3 : null;
+  const hours = quantile2(hits.flatMap((r2) => r2.hours_to_hit != null ? [r2.hours_to_hit] : []), 0.5);
+  const sellRate = sells.length ? sells.filter((r2) => r2.outcome === "good").length / sells.length : null;
+  const by_reason = sellRate === null ? {} : buckets(sells, (r2) => r2.features.reason, (r2) => r2.outcome === "good", sellRate);
+  const lessons = [];
+  if (!ready && moves) lessons.push(...moveLessons(moves), `${buys.length} of the first ${MIN_RESULTS} real picks have settled; until then picks are rated from these price moves.`);
+  else if (!ready) lessons.push(`Still watching: ${buys.length} of the first ${MIN_RESULTS} buy picks have settled. Picks are ranked by the plain rules until then.`);
+  else {
+    lessons.push(`${pc(rate)}% of buy picks reached their target within 4 days (${buys.length} picks in the last ${WINDOW_DAYS} days).`);
+    if (hours !== null) lessons.push(`Picks that sold usually got there in about ${Math.round(hours)} hours.`);
+    if (reach < 1) lessons.push(`Prices usually stopped short of the old targets, so targets are now set ${pc(reach)}% of the way to the 7-day middle price; ${pc(rate_at_reach ?? 0)}% of past picks reached that.`);
+    const notable = Object.entries(factors).flatMap(([f2, bs]) => Object.entries(bs).filter(([, b]) => b.n >= 10 && Math.abs(b.factor - 1) >= 0.15).map(([k, b]) => ({ f: f2, k, b }))).sort((a, b) => Math.abs(b.b.factor - 1) - Math.abs(a.b.factor - 1)).slice(0, 4);
+    for (const { f: f2, k, b } of notable) lessons.push(`${FEATURE_LABEL[f2]} "${k}": ${pc(b.rate)}% hit (${b.n} picks), so these are ranked ${b.factor > 1 ? "higher" : "lower"}.`);
+  }
+  if (sells.length >= 15) lessons.push(`Sell calls were right ${pc(sellRate)}% of the time (${sells.length} calls).`);
+  return {
+    version: 1,
+    platform,
+    updated_at: new Date(now2).toISOString(),
+    window_days: WINDOW_DAYS,
+    ready,
+    buys: { n: buys.length, hits: hits.length, rate: rate === null ? null : Math.round(rate * 1e3) / 1e3, median_hours_to_hit: hours === null ? null : Math.round(hours), reach, rate_at_reach, factors },
+    sells: { n: sells.length, good: sells.length ? sells.filter((r2) => r2.outcome === "good").length : 0, rate: sellRate === null ? null : Math.round(sellRate * 1e3) / 1e3, by_reason },
+    lessons,
+    moves
+  };
+}
+function moveLessons(m) {
+  const days = Math.max(1, Math.round(m.history_h / 24));
+  const out = [];
+  out.push(`Learned from ${m.n.toLocaleString("en-US")} price moves across ${m.cards.toLocaleString("en-US")} cards over the last ${days} day${days === 1 ? "" : "s"}: what each card did in the 2 days after every refresh.`);
+  if (m.check) out.push(m.check.skill > 0 ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called whether a card would climb 6%+ within 2 days (enough to beat the tax) right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.` : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average at calling 6%+ climbs, so picks lean on the plain rules.`);
+  const say = (key, text2) => {
+    const b = m.by[key];
+    if (b) out.push(text2(b));
+  };
+  say("12%+ under|bounced", (b) => `Cards 12%+ under their usual price that had started to bounce were up a day later ${pc(b.up24)}% of the time; half of them rose ${pc(b.peak[5])}% or more within 2 days (${b.n} examples).`);
+  say("12%+ under|still dipping", (b) => `Cards 12%+ under their usual price that were still falling kept falling a day later ${pc(b.down24)}% of the time (${b.n} examples), so the plan waits for a bounce.`);
+  say("15%+ over", (b) => `Cards 15%+ over their usual price were lower a day later ${pc(b.down24)}% of the time (${b.n} examples): that's when to sell.`);
+  say("near usual", (b) => `Cards near their usual price moved ${b.ret24 >= 0 ? "+" : ""}${pc(b.ret24)}% in a day on average, so there's little to gain flipping them.`);
+  return out;
+}
+function buyOutlook(model, f2, spot) {
+  if ((!model?.ready || model.buys.rate === null) && model?.moves && spot) {
+    const hit = moveBucket(model.moves, spot);
+    if (!hit) return { factor: 1, p_hit: null, similar: 0 };
+    const t = model.moves.trust ?? 0.5, base = reachChance(model.moves.overall, spot.rise), p = t * reachChance(hit.b, spot.rise) + (1 - t) * base;
+    return { factor: clampN(base > 0.02 ? p / base : p > 0.1 ? 1.6 : 1, 0.5, 1.6), p_hit: Math.round(clampN(p, 0.02, 0.9) * 100) / 100, similar: hit.n, from_moves: true };
+  }
+  if (!model?.ready || model.buys.rate === null) return { factor: 1, p_hit: null, similar: 0 };
+  let factor = 1, similar = Infinity;
+  for (const k of Object.keys(FEATURE_LABEL)) {
+    const b = model.buys.factors[k]?.[f2[k]];
+    if (b) {
+      factor *= b.factor;
+      similar = Math.min(similar, b.n);
+    }
+  }
+  factor = clampN(Math.pow(factor, 0.7), 0.35, 2);
+  return { factor, p_hit: Math.round(clampN(model.buys.rate * factor, 0.02, 0.9) * 100) / 100, similar: similar === Infinity ? 0 : similar };
+}
+function sellOutlook(model, reason, spot) {
+  const b = model?.sells.by_reason[reason];
+  if ((!b || b.n < 15) && model?.moves && spot) {
+    const hit = moveBucket(model.moves, spot), base = model.moves.overall.down24, t = model.moves.trust ?? 0.5;
+    if (hit) {
+      const rate = r3(t * hit.b.down24 + (1 - t) * base);
+      return { factor: clampN(base > 0.05 ? rate / base : 1, 0.5, 1.6), rate, n: hit.n };
+    }
+  }
+  if (!b || b.n < 15) return { factor: 1, rate: null, n: b?.n ?? 0 };
+  return { factor: b.factor, rate: b.rate, n: b.n };
+}
+
+// supabase/functions/_shared/fut/strategy.ts
+var fail6 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var RULES = DEFAULT_MARKET_RULES;
+var net = (price) => netAfterTax(price, RULES);
+var down = (price) => roundToStep(price, "down", RULES);
+var near = (price) => roundToStep(price, "nearest", RULES);
+var pct6 = (v) => Math.round(v * 1e3) / 10;
+var c2 = (n2) => Math.round(n2).toLocaleString("en-US");
+var clamp3 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function median4(xs) {
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function changeOver(card, hours) {
+  const n2 = card.prices.length;
+  if (n2 < 2) return null;
+  const want = card.ages[n2 - 1] + hours;
+  let best = -1, gap = Infinity;
+  for (let i = 0; i < n2 - 1; i++) {
+    const g = Math.abs(card.ages[i] - want);
+    if (g < gap) {
+      gap = g;
+      best = i;
+    }
+  }
+  if (best < 0 || gap > 6) return null;
+  return pct6((card.prices[n2 - 1] - card.prices[best]) / card.prices[best]);
+}
+function cardStats(card, window_h) {
+  const n2 = card.prices.length;
+  if (!n2 || card.prices.length !== card.ages.length) return null;
+  let falling = 0, rising = 0;
+  for (let i = n2 - 1; i > 0 && card.prices[i] < card.prices[i - 1]; i--) falling++;
+  for (let i = n2 - 1; i > 0 && card.prices[i] > card.prices[i - 1]; i--) rising++;
+  return {
+    latest: card.prices[n2 - 1],
+    latest_age_h: card.ages[n2 - 1],
+    prev: n2 > 1 ? card.prices[n2 - 2] : null,
+    change_24h: changeOver(card, 24),
+    change_72h: changeOver(card, 72),
+    median: median4(card.prices),
+    min: Math.min(...card.prices),
+    max: Math.max(...card.prices),
+    points: n2,
+    falling,
+    rising,
+    new_card: window_h >= 48 && card.ages[0] < window_h - 18
+  };
+}
+function withLive(series, live) {
+  if (!live || !series.latest) return { series, fresh: null, live_at: null };
+  const h = Math.round((Date.parse(live.at) - Date.parse(series.latest)) / 36e5 * 10) / 10;
+  if (!(h >= 0.25)) {
+    return { series, fresh: new Set(series.cards.filter((c4) => live.prices.has(c4.ea_item_id)).map((c4) => c4.ea_item_id)), live_at: series.latest };
+  }
+  const fresh = /* @__PURE__ */ new Set();
+  const cards = series.cards.map((card) => {
+    const price = live.prices.get(card.ea_item_id), ages = card.ages.map((a) => a + h);
+    if (price === void 0) return { ...card, ages };
+    fresh.add(card.ea_item_id);
+    return { ...card, prices: [...card.prices, price], ages: [...ages, 0] };
+  });
+  return { series: { ...series, latest: live.at, window_h: series.window_h + h, cards }, fresh, live_at: live.at };
+}
+function cardKind(c4) {
+  if (c4.is_icon) return "icon";
+  if (c4.is_hero) return "hero";
+  const v = (c4.version ?? "").toLowerCase();
+  const base = !v || ["rare", "common", "non-rare", "non rare", "base", "gold", "silver", "bronze"].some((x) => v === x || v.endsWith(` ${x}`));
+  if (!base) return "promo";
+  if (c4.rating >= 83 && c4.rating <= 88) return "fodder";
+  return c4.rating >= 75 ? "gold" : "silver_bronze";
+}
+var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function ukClock(now2) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23", weekday: "short" }).formatToParts(new Date(now2)).map((p) => [p.type, p.value]));
+  const year = Number(parts.year), month = Number(parts.month), day = Number(parts.day);
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, weekday: new Date(Date.UTC(year, month - 1, day)).getUTCDay(), hour: Number(parts.hour) % 24, month, day, year };
+}
+function blackFriday(year) {
+  const first = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+  const thursday = 1 + (4 - first + 7) % 7 + 21;
+  return new Date(Date.UTC(year, 10, thursday + 1)).toISOString().slice(0, 10);
+}
+var daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+function marketTiming(now2) {
+  const k = ukClock(now2), wd = k.weekday, h = k.hour;
+  let buy = 0, sell = 0, extra = 0, nowText, next = null;
+  if (wd === 1) {
+    buy = 1;
+    sell = -0.5;
+    nowText = "Monday: the weekend's games are over and prices are usually at their weekly low. A good day to buy cards to sell later in the week.";
+    next = "Sell what you buy today from Thursday evening to Saturday, when demand for the weekend's games peaks.";
+  } else if (wd === 2 || wd === 3) {
+    buy = 0.5;
+    nowText = `${DAYS[wd]}: a quiet midweek market. Buy now for the weekend; prices usually drift up from Thursday.`;
+    next = "Weekend rewards land on Thursday morning (UK), which floods the market with packed cards for a few hours.";
+  } else if (wd === 4 && h < 8) {
+    sell = 1;
+    buy = -0.5;
+    nowText = "Thursday before 08:00 UK: weekend rewards land soon and push prices down for a few hours. Sell anything you planned to sell now.";
+    next = "Buy later today once the reward packs are opened.";
+  } else if (wd === 4) {
+    buy = 1;
+    nowText = "Thursday: weekend rewards are being opened, so prices dip through the day. A good afternoon to buy.";
+    next = "Prices usually climb into Friday afternoon; sell before the 18:00 UK promo drop on Friday.";
+  } else if (wd === 5 && h < 18) {
+    sell = 1;
+    buy = -1;
+    extra = 0.2;
+    nowText = "Friday before 18:00 UK: prices usually peak ahead of the weekend and the new promo. Sell now and keep coins back.";
+    next = "At 18:00 UK the new promo packs land and prices usually drop for a few hours: that's the time to buy.";
+  } else if (wd === 5) {
+    buy = 1;
+    sell = -1;
+    nowText = "Friday evening: the new promo just dropped and pack openings usually pull prices down. One of the best buying windows of the week.";
+    next = "Sell on Saturday when demand for the weekend's games peaks.";
+  } else if (wd === 6) {
+    sell = 1;
+    buy = -0.5;
+    nowText = "Saturday: weekend games are in full swing and demand for good players peaks. A good day to sell.";
+    next = "Demand falls on Sunday evening as the weekend's games end.";
+  } else if (h < 18) {
+    sell = 0.5;
+    nowText = "Sunday: sell what you don't need before the evening; demand falls as the weekend's games end.";
+    next = "Buy on Monday when prices are usually at their weekly low.";
+  } else {
+    buy = 0.5;
+    nowText = "Sunday evening: the weekend's games are ending and prices start to soften. You can begin buying for next week.";
+    next = "Monday is usually the cheapest day of the week.";
+  }
+  const events = [];
+  const bf = blackFriday(k.year), toBf = daysBetween(k.date, bf);
+  if (toBf > 0 && toBf <= 21) {
+    events.push({ name: "Black Friday", date: bf, days: toBf, advice: `Black Friday is ${toBf} day${toBf === 1 ? "" : "s"} away. It usually brings one of the biggest market drops of the year, with flash promos and cheap packs. ${toBf <= 10 ? "Keep more coins than usual and sell cards you don't need before it." : "Start selling cards you don't need over the next week."}` });
+    if (toBf <= 10) {
+      extra += 0.15;
+      sell += 0.5;
+    }
+  } else if (toBf <= 0 && toBf >= -3) {
+    events.push({ name: "Black Friday", date: bf, days: toBf, advice: "Black Friday promos are running and the market is usually at its lowest. Buy the cards you want for the weeks after." });
+    buy += 1;
+  }
+  const toty = k.month === 12 || k.month === 1 && k.day <= 25;
+  if (toty) {
+    events.push({ name: "Team of the Year", date: `${k.month === 12 ? k.year + 1 : k.year}-01-15`, days: daysBetween(k.date, `${k.month === 12 ? k.year + 1 : k.year}-01-15`), advice: "Team of the Year usually lands in mid-January and drops high-end prices hard. Sell expensive cards you don't need before it, then buy back during it." });
+    if (k.month === 12 && k.day >= 20 || k.month === 1 && k.day <= 10) {
+      extra += 0.15;
+      sell += 0.5;
+    }
+  }
+  if (k.month === 4 && k.day >= 15 || k.month === 5 || k.month === 6 && k.day <= 10) {
+    events.push({ name: "Team of the Season", date: `${k.year}-05-01`, days: daysBetween(k.date, `${k.year}-05-01`), advice: "Team of the Season runs from late April into June, one league at a time. Each league's release usually drops prices of that league's best cards." });
+  }
+  return {
+    uk_time: `${String(h).padStart(2, "0")}:00`,
+    weekday: DAYS[wd],
+    buy_bias: clamp3(buy, -1, 1),
+    sell_bias: clamp3(sell, -1, 1),
+    extra_reserve: extra,
+    now: nowText,
+    next,
+    events,
+    daily: h < 18 ? "New SBCs and content land at 18:00 UK every day. Fodder (83 to 88 rated gold cards) usually jumps in the hour after a big SBC: buy fodder in the morning and list it just before 18:00." : "Today's 18:00 UK content is out. If a big SBC landed, fodder is at its daily high now: list fodder you don't need, and buy fodder again tomorrow morning."
+  };
+}
+var RISK = { careful: { reserve: 0.35, picks: 4, cap: 0.2, min_roi: 0.05 }, normal: { reserve: 0.2, picks: 6, cap: 0.3, min_roi: 0.03 }, bold: { reserve: 0.1, picks: 8, cap: 0.4, min_roi: 0.02 } };
+var MIN_PROFIT = 150;
+var BUY_RULES = ["dip", "settled", "rising", "steady"];
+var DEFAULT_RULE = "settled";
+var RULE_LABEL = {
+  dip: { name: "Any dip", detail: "Cards 5%+ under their 7-day middle price (the old rule)." },
+  settled: { name: "Dips that stopped falling", detail: "5%+ under their week, no lower than a day ago, and not falling faster than the market." },
+  rising: { name: "Cards on the way up", detail: "Up 3%+ over 3 days and not down over the last day, doing better than the market, without a sudden spike." },
+  steady: { name: "Steady cards near their low", detail: "Flat for 3 days, at or under their week's middle, with a narrow price range." }
+};
+function marketMove(stats, byEa) {
+  const d24 = [], d72 = [];
+  for (const [ea, s] of stats) {
+    if (!byEa.get(ea)?.tracked || s.latest_age_h > 13) continue;
+    if (s.change_24h !== null) d24.push(s.change_24h);
+    if (s.change_72h !== null) d72.push(s.change_72h);
+  }
+  return { m24: d24.length >= 50 ? Math.round(median4(d24) * 10) / 10 : null, m72: d72.length >= 50 ? Math.round(median4(d72) * 10) / 10 : null };
+}
+function scoreBuys(cards, timing, o) {
+  const rule = o.rule ?? DEFAULT_RULE, m72 = o.market?.m72 ?? null;
+  const reach = o.model?.ready ? o.model.buys.reach : 1;
+  const out = [];
+  for (const { card, stats: s } of cards) {
+    if (!card.tracked || s.points < 6 || s.latest_age_h > 13 || s.latest < 1e3 || s.latest > o.max_price) continue;
+    if (cardKind(card) === "silver_bronze") continue;
+    if (s.new_card) continue;
+    if (o.fresh && !o.fresh.has(card.ea_item_id)) continue;
+    const discount = (s.median - s.latest) / s.median;
+    if (discount > 0.45) continue;
+    if (s.prev !== null && s.latest > s.prev * 1.25) continue;
+    if (s.falling >= 3 && s.latest <= s.min) continue;
+    const d24 = s.change_24h, d72 = s.change_72h, vsMarket = d72 !== null && m72 !== null ? d72 - m72 : null;
+    const wide = (s.max - s.min) / s.median;
+    if (rule === "dip" && discount < 0.05) continue;
+    if (rule === "settled" && !(discount >= 0.05 && discount <= 0.35 && s.falling === 0 && d24 !== null && d24 >= 0 && (d72 === null || d72 > -15) && (vsMarket === null || vsMarket >= -3))) continue;
+    if (rule === "rising" && !(d72 !== null && d72 >= 3 && d72 <= 30 && d24 !== null && d24 >= 0 && s.falling === 0 && (vsMarket === null || vsMarket >= 3) && d24 <= 15 && wide <= 0.6)) continue;
+    if (rule === "steady" && !(d72 !== null && Math.abs(d72) <= 3 && d24 !== null && d24 >= -1 && d24 <= 3 && s.latest <= s.median && wide <= 0.25)) continue;
+    const buy_at = down(s.latest);
+    const rise = clamp3(o.rise ?? 0.08, 0.08, 0.3);
+    const target_raw = rule === "rising" ? down(s.latest * (1 + rise)) : rule === "steady" ? down(Math.min(Math.max(s.max * 0.98, s.latest * (1 + rise)), s.latest * 1.3)) : down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
+    let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
+    if (!o.model?.ready && o.model?.moves) {
+      const mb = moveBucket(o.model.moves, { discount, rising: s.rising, falling: s.falling, kind: cardKind(card), price: s.latest });
+      const likely = mb ? down(buy_at * (1 + mb.b.peak[5])) : sell_at;
+      if (likely < sell_at && likely > buy_at) sell_at = likely;
+    }
+    const profit = net(sell_at) - buy_at, roi = profit / buy_at;
+    if (profit < MIN_PROFIT || roi < o.min_roi) continue;
+    const max_buy = Math.max(buy_at, down(Math.min(net(sell_at) / (1 + o.min_roi), net(sell_at) - MIN_PROFIT)));
+    const kind = cardKind(card), range = (s.max - s.min) / s.median;
+    if (range > 1) continue;
+    let conf = clamp3(s.points / 12, 0.4, 1) * (range > 0.6 ? 0.6 : 1);
+    if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
+    const why = [discount >= 0.02 ? `${pct6(discount)}% under its 7-day middle price (${c2(s.median)}).` : discount <= -0.02 ? `${pct6(-discount)}% over its 7-day middle price (${c2(s.median)}), and climbing.` : `At its 7-day middle price (${c2(s.median)}).`];
+    if (d24 !== null && d72 !== null) why.push(`${d72 >= 0 ? "Up" : "Down"} ${Math.abs(d72)}% over 3 days${vsMarket !== null ? ` (${vsMarket >= 0 ? "better" : "worse"} than the market by ${Math.abs(Math.round(vsMarket * 10) / 10)} points)` : ""}, ${d24 >= 0 ? `${d24 > 0 ? "up" : "flat"} over the last day` : `down ${Math.abs(d24)}% over the last day`}.`);
+    if (s.rising >= 1) why.push(`Bounced off its low: up ${s.rising === 1 ? "since the last refresh" : `${s.rising} refreshes in a row`}.`);
+    else if (s.falling === 0) why.push("Stopped falling at the last refresh.");
+    why.push(`Traded between ${c2(s.min)} and ${c2(s.max)} this week.`);
+    let bonus = 0;
+    if (kind === "fodder") {
+      why.push("SBC fodder: rated 83 to 88 golds usually rise when big SBCs land at 18:00 UK.");
+      bonus = timing.buy_bias >= 0 ? 0.15 : 0.05;
+    }
+    if (o.owned.has(card.ea_item_id)) why.push("You already own a copy.");
+    const risks = [];
+    if (s.falling >= 2) risks.push(`Fell ${s.falling} refreshes before the latest one.`);
+    if (s.rising >= 1) risks.push("It has already bounced: in our data, dips that had bounced gained less over the next 2 days than ones still at their low.");
+    if (range > 0.6) risks.push("Very jumpy price this week.");
+    if (s.change_72h !== null && s.change_72h < -20) risks.push(`Down ${Math.abs(s.change_72h)}% in 3 days: could be a new promo pulling it down.`);
+    if (kind === "promo") risks.push("Promo card: supply can jump if it comes back in packs or an SBC.");
+    const features = { kind, band: priceBand(s.latest), discount: discountBand(discount), bounce: bounceBand(s.rising, s.falling), trend: trendBand(s.change_72h), weekday: timing.weekday };
+    const learned = buyOutlook(o.model, features, { discount, rising: s.rising, falling: s.falling, kind, price: s.latest, rise: sell_at / buy_at - 1 });
+    const forecast = forecast24(o.model?.moves, { discount, rising: s.rising, falling: s.falling, kind, price: s.latest });
+    if (learned.p_hit !== null && learned.from_moves) {
+      why.push(`Cards in the same spot reached a price this high within 2 days ${Math.round(learned.p_hit * 100)}% of the time (${learned.similar.toLocaleString("en-US")} past price moves).`);
+      if (learned.factor < 0.8) risks.push("Cards in this spot have usually not climbed this far, so it's ranked lower.");
+    } else if (learned.p_hit !== null) {
+      why.push(`Past picks like this reached their target ${Math.round(learned.p_hit * 100)}% of the time${learned.similar ? ` (from ${learned.similar}+ similar picks)` : ""}.`);
+      if (learned.factor < 0.8) risks.push("Picks like this have done worse than average, so it's ranked lower.");
+    }
+    const strength = vsMarket === null ? 1 : clamp3(1 + vsMarket / 40, 0.7, 1.4);
+    const score2 = (roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi) * learned.factor * strength;
+    if (learned.p_hit !== null) conf = learned.p_hit >= 0.6 ? 1 : learned.p_hit >= 0.4 ? 0.7 : 0.4;
+    out.push({
+      ea_item_id: card.ea_item_id,
+      name: card.name,
+      version: card.version,
+      rating: card.rating,
+      position: card.position,
+      kind,
+      price: s.latest,
+      buy_at,
+      sell_at,
+      profit,
+      roi: pct6(roi),
+      quantity: null,
+      spend: null,
+      total_profit: null,
+      median: Math.round(s.median),
+      low: s.min,
+      high: s.max,
+      change_24h: s.change_24h,
+      points: s.points,
+      confidence: conf >= 0.85 ? "high" : conf >= 0.6 ? "medium" : "low",
+      hold: o.model?.ready && o.model.buys.median_hours_to_hit != null ? `about ${o.model.buys.median_hours_to_hit} hours` : kind === "fodder" ? "Same day to 2 days" : "1 to 4 days",
+      why,
+      risks,
+      score: score2,
+      target_raw,
+      features,
+      p_hit: learned.p_hit,
+      max_buy,
+      forecast
+    });
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+function scoreSells(club, stats, timing, squad, model) {
+  const out = [];
+  const event = timing.events.find((e) => e.days > 0 && e.days <= 10);
+  for (const card of club) {
+    if (card.tradeable_quantity <= 0 || !card.ea_item_id) continue;
+    const s = stats.get(card.ea_item_id);
+    const price = s && s.latest_age_h <= 13 ? s.latest : card.price;
+    if (!price || price < 1e3) continue;
+    const premium = s ? (price - s.median) / s.median : 0;
+    let reason = null, why = "", score2 = 0;
+    if (s && s.points >= 6 && premium >= 0.06) {
+      reason = "near_high";
+      why = `${pct6(premium)}% above its 7-day middle price (${c2(s.median)}). Prices this far up usually come back down.`;
+      score2 = premium;
+    } else if (s && s.points >= 6 && s.max > s.min * 1.05 && price >= s.max * 0.97) {
+      reason = "near_high";
+      why = `At its weekly high (${c2(s.max)}).`;
+      score2 = 0.05;
+    } else if (s && s.falling >= 3 && s.change_72h !== null && s.change_72h <= -8) {
+      reason = "falling";
+      why = `Down ${Math.abs(s.change_72h)}% in 3 days and still falling. If you don't use it, selling now saves losing more.`;
+      score2 = Math.abs(s.change_72h) / 200;
+    } else if (timing.sell_bias > 0 && (card.rating ?? 0) >= 86) {
+      reason = "weekend_demand";
+      why = "Demand for highly rated players is at its weekly peak. If you won't play it this weekend, now is a good time.";
+      score2 = 0.03;
+    } else if (event && price >= 2e4) {
+      reason = "before_event";
+      why = `${event.name} is ${event.days} day${event.days === 1 ? "" : "s"} away and usually drops prices. Sell it now if you don't need it.`;
+      score2 = 0.02;
+    }
+    if (!reason) continue;
+    const list_at = near(price), quick_at = Math.max(RULES.min_price, list_at - stepAt(list_at, RULES));
+    const in_squad = squad.has(card.card_id);
+    if (in_squad) why += " It's in your active squad, so only sell if you have a replacement.";
+    const usedCalls = (model?.sells.by_reason[reason]?.n ?? 0) >= 15;
+    const spot = s ? { discount: (s.median - price) / s.median, rising: s.rising, falling: s.falling, kind: cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false }), price } : void 0;
+    const learned = sellOutlook(model, reason, spot);
+    const forecast = spot ? forecast24(model?.moves, spot) : null;
+    if (learned.rate !== null) why += usedCalls ? ` Calls like this were right ${Math.round(learned.rate * 100)}% of the time (${learned.n} calls).` : ` Cards in the same spot were lower a day later ${Math.round(learned.rate * 100)}% of the time (${learned.n.toLocaleString("en-US")} past price moves).`;
+    score2 = score2 * (1 + 0.3 * timing.sell_bias) * (in_squad ? 0.3 : 1) * Math.log10(price) * learned.factor;
+    out.push({
+      card_id: card.card_id,
+      ea_item_id: card.ea_item_id,
+      name: card.name,
+      version: card.version,
+      rating: card.rating,
+      position: card.position,
+      quantity: card.tradeable_quantity,
+      list_at,
+      quick_at,
+      after_tax: net(list_at) * card.tradeable_quantity,
+      median: s ? Math.round(s.median) : null,
+      high: s?.max ?? null,
+      change_24h: s?.change_24h ?? null,
+      reason,
+      why,
+      in_squad,
+      score: score2,
+      right_rate: learned.rate,
+      forecast
+    });
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+function pileFixes(items, stats, names) {
+  const out = [];
+  for (const i of items) {
+    const s = stats.get(i.ea_item_id), price = s && s.latest_age_h <= 13 ? s.latest : null;
+    const name2 = names.get(i.ea_item_id) ?? `Item ${i.ea_item_id}`;
+    const stuck = (i.state === "expired" || i.state === "unlisted") && !i.untradeable;
+    const qs = stuck ? quickSellCall({ rating: i.rating, special: (i.rare_flag ?? 0) > 1, exact: i.discard_value ?? null, price: price ?? i.buy_now, failed: i.state === "expired", change_72h: s?.change_72h ?? null }) : null;
+    if (i.state === "sold") out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "clear", list_at: null, why: `Sold for ${c2(i.current_bid ?? i.buy_now ?? 0)}. Clear it to collect the coins and free the slot.` });
+    else if (qs?.quicksell) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "quicksell", list_at: null, why: qs.why, quick_sell: qs.value });
+    else if (stuck) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c2(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
+    else if (i.state === "listed" && price && i.buy_now && i.buy_now > price * 1.1) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "lower", list_at: near(price), why: `Listed at ${c2(i.buy_now)}, ${pct6(i.buy_now / price - 1)}% above the market. When it expires, relist at ${c2(near(price))}.` });
+  }
+  const order = { clear: 0, quicksell: 1, relist: 2, lower: 3 };
+  return out.sort((a, b) => order[a.action] - order[b.action] || (b.price ?? 0) - (a.price ?? 0));
+}
+var QS_BASE = {
+  99: 12078,
+  98: 11956,
+  97: 11834,
+  96: 11712,
+  95: 11590,
+  94: 11468,
+  93: 11346,
+  92: 11224,
+  91: 646,
+  90: 638,
+  89: 630,
+  88: 622,
+  87: 618,
+  86: 611,
+  85: 604,
+  84: 596,
+  83: 589,
+  82: 582,
+  81: 575,
+  80: 568,
+  79: 561,
+  78: 554,
+  77: 547,
+  76: 540,
+  75: 533,
+  74: 259,
+  73: 255,
+  72: 251,
+  71: 247,
+  70: 243,
+  69: 240,
+  68: 237,
+  67: 234,
+  66: 231,
+  65: 228,
+  64: 48,
+  63: 46,
+  62: 46,
+  61: 45,
+  60: 44,
+  59: 43,
+  58: 42,
+  57: 41,
+  56: 40,
+  55: 39,
+  54: 38,
+  53: 37,
+  52: 36,
+  51: 35,
+  50: 34,
+  49: 33,
+  48: 32,
+  47: 31,
+  46: 30,
+  45: 30,
+  44: 29,
+  43: 29,
+  42: 28,
+  41: 28,
+  40: 28
+};
+function quickSellValue(rating2) {
+  if (rating2 == null || !Number.isFinite(rating2)) return null;
+  return QS_BASE[clamp3(Math.round(rating2), 40, 99)] ?? null;
+}
+function quickSellCall(o) {
+  const value = o.exact && o.exact > 0 ? o.exact : quickSellValue(o.rating);
+  if (!value || !o.price || o.price <= 0) return null;
+  const at_least = !(o.exact && o.exact > 0) && !!o.special;
+  const list_at = near(Math.max(RULES.min_price, o.price)), list_net = net(list_at);
+  const cheap = list_at <= Math.max(1e3, value * 2);
+  let chance = 0.9;
+  if (cheap) chance -= 0.2;
+  if (o.failed) chance -= 0.2;
+  const fall = o.change_72h != null && o.change_72h < 0 ? Math.min(0.3, Math.abs(o.change_72h) / 200) : 0;
+  const expected = Math.round(list_net * chance * (1 - fall));
+  const quicksell = value >= expected * 0.9;
+  const v = `${at_least ? "at least " : ""}${c2(value)}`;
+  const reasons = [o.failed ? "it already didn't sell once" : null, cheap ? "cards this cheap often sit unsold" : null, fall ? `its price fell ${Math.abs(o.change_72h)}% in 3 days` : null].filter(Boolean);
+  const why = quicksell ? `Quick sell it for ${v} coins now. Listing at ${c2(list_at)} gets ${c2(list_net)} after the 5% tax only if it sells${reasons.length ? `, and ${reasons.join(" and ")}` : ""}.` : `List it: ${c2(list_at)} gets ${c2(list_net)} after tax, well over the ${v} quick sell value.`;
+  return { value, at_least, list_at, list_net, expected, quicksell, why };
+}
+function quickSells(club, stats, squad) {
+  const out = [];
+  for (const card of club) {
+    if (card.tradeable_quantity <= 0 || squad.has(card.card_id)) continue;
+    const s = card.ea_item_id ? stats.get(card.ea_item_id) : void 0;
+    const price = s && s.latest_age_h <= 13 ? s.latest : card.price;
+    const kind = cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false });
+    const call4 = quickSellCall({ rating: card.rating, special: kind === "promo", price, change_72h: s?.change_72h ?? null });
+    if (!call4?.quicksell) continue;
+    out.push({
+      card_id: card.card_id,
+      ea_item_id: card.ea_item_id,
+      name: card.name,
+      rating: card.rating,
+      version: card.version,
+      quantity: card.tradeable_quantity,
+      quick_sell: call4.value,
+      at_least: call4.at_least,
+      list_at: call4.list_at,
+      list_net: call4.list_net,
+      total: call4.value * card.tradeable_quantity,
+      why: call4.why
+    });
+  }
+  return out.sort((a, b) => b.total - a.total);
+}
+function scorePast(past, series, latest) {
+  if (!latest) return { days: 0, picks: 0, hit: 0, open_up: 0, open_down: 0, avg_now_pct: null, items: [] };
+  const items = past.flatMap((p) => p.buys.map((b) => {
+    const card = series.get(b.ea_item_id), age = p.prices_at ? (Date.parse(latest) - Date.parse(p.prices_at)) / 36e5 : null;
+    if (!card || age === null) return { plan_date: p.plan_date, name: b.name, buy_at: b.buy_at, sell_at: b.sell_at, best: null, now: null, outcome: "unknown", now_pct: null };
+    const after = card.prices.filter((_, i) => card.ages[i] < age - 0.5);
+    const now2 = card.prices.at(-1), best = after.length ? Math.max(...after) : null;
+    const hit = best !== null && best >= b.sell_at;
+    const now_pct = pct6((net(now2) - b.buy_at) / b.buy_at);
+    return { plan_date: p.plan_date, name: b.name, buy_at: b.buy_at, sell_at: b.sell_at, best, now: now2, outcome: hit ? "hit" : now_pct >= 0 ? "open_up" : after.length ? "open_down" : "too_soon", now_pct };
+  }));
+  const known = items.filter((i) => i.outcome !== "unknown" && i.outcome !== "too_soon");
+  return {
+    days: past.length,
+    picks: known.length,
+    hit: known.filter((i) => i.outcome === "hit").length,
+    open_up: known.filter((i) => i.outcome === "open_up").length,
+    open_down: known.filter((i) => i.outcome === "open_down").length,
+    avg_now_pct: known.length ? pct6(known.reduce((n2, i) => n2 + (i.now_pct ?? 0), 0) / known.length / 100) : null,
+    items
+  };
+}
+function buildStrategy(raw) {
+  const lived = withLive(raw.series, raw.live);
+  const input = { ...raw, series: { ...lived.series, cards: lived.series.cards.map((c4) => cleanSeries(c4)) } };
+  const timing = marketTiming(input.now);
+  const risk = RISK[input.risk ?? "normal"];
+  const byEa = new Map(input.series.cards.map((card) => [card.ea_item_id, card]));
+  const stats = /* @__PURE__ */ new Map();
+  for (const card of input.series.cards) {
+    const s = cardStats(card, input.series.window_h);
+    if (s) stats.set(card.ea_item_id, s);
+  }
+  const moves = input.series.cards.flatMap((card) => {
+    const s = stats.get(card.ea_item_id);
+    return card.tracked && s && s.change_24h !== null && s.latest_age_h <= 13 ? [s.change_24h] : [];
+  });
+  const moves72 = input.series.cards.flatMap((card) => {
+    const s = stats.get(card.ea_item_id);
+    return card.tracked && s && s.change_72h !== null && s.latest_age_h <= 13 ? [s.change_72h] : [];
+  });
+  const m24 = moves.length >= 50 ? Math.round(median4(moves) * 10) / 10 : null, m72 = moves72.length >= 50 ? Math.round(median4(moves72) * 10) / 10 : null;
+  const mood = m24 === null ? "unknown" : m24 <= -2 ? "falling" : m24 >= 2 ? "rising" : "steady";
+  const moodBuy = mood === "falling" ? -0.4 : mood === "rising" ? 0.2 : 0;
+  const tilt = clamp3(timing.buy_bias + moodBuy - timing.sell_bias, -2, 2);
+  const stance = tilt >= 0.75 ? "buy" : tilt <= -0.75 ? "sell" : "flip";
+  const picking = chooseRule(input.rules ?? input.model?.rules);
+  const market = marketMove(stats, byEa);
+  const reserve_pct = clamp3(risk.reserve + timing.extra_reserve + (stance === "sell" ? 0.15 : 0) - (stance === "buy" ? 0.05 : 0) + (picking.hold ? 0.2 : 0), 0.05, 0.8);
+  const coins2 = input.coins;
+  const reserve = coins2 === null ? null : Math.round(coins2 * reserve_pct);
+  const spend = coins2 === null ? null : coins2 - reserve;
+  const per_pick = spend === null ? null : Math.max(0, Math.floor(spend * risk.cap));
+  const used_slots = input.tradepile?.length ?? 0, max_slots = input.tradepile_max ?? 100;
+  const free_slots = Math.max(0, max_slots - used_slots);
+  const owned = new Set((input.club ?? []).flatMap((x) => x.ea_item_id ? [x.ea_item_id] : []));
+  const pickOpts = { rule: picking.rule, market, rise: picking.rise };
+  const candidates = scoreBuys([...stats].flatMap(([ea, s]) => {
+    const card = byEa.get(ea);
+    return card ? [{ card, stats: s }] : [];
+  }), timing, {
+    max_price: per_pick !== null && per_pick >= 1e3 ? per_pick : 15e6,
+    min_roi: risk.min_roi,
+    owned,
+    model: input.model,
+    fresh: lived.fresh,
+    ...pickOpts
+  });
+  const buys = [], seenPlayer = /* @__PURE__ */ new Set();
+  let left = spend ?? 0, slots = free_slots;
+  for (const p of candidates) {
+    if (buys.length >= (picking.hold ? Math.min(2, risk.picks) : risk.picks)) break;
+    const player = `${p.name}|${p.rating}`;
+    if (seenPlayer.has(player)) continue;
+    if (spend !== null) {
+      const cap = Math.min(per_pick, left), maxQty = p.price >= 5e4 ? 2 : p.price >= 1e4 ? 5 : 10;
+      const qty = Math.min(Math.floor(cap / p.buy_at), maxQty, slots);
+      if (qty < 1) continue;
+      p.quantity = qty;
+      p.spend = qty * p.buy_at;
+      p.total_profit = qty * p.profit;
+      left -= p.spend;
+      slots -= qty;
+    }
+    seenPlayer.add(player);
+    buys.push(p);
+  }
+  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys, ...pickOpts });
+  const watch = candidates.filter((p) => !buys.includes(p) && !seenPlayer.has(`${p.name}|${p.rating}`)).slice(0, 8);
+  const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids, input.model).slice(0, stance === "sell" ? 10 : 6) : [];
+  const names = new Map([...byEa].map(([k, v]) => [k, v.name]));
+  for (const x of input.club ?? []) if (x.ea_item_id) names.set(x.ea_item_id, x.name);
+  const pile = input.tradepile ? pileFixes(input.tradepile, stats, names) : [];
+  const listing = new Set(sells.map((x) => x.card_id));
+  const quick = input.club ? quickSells(input.club.filter((x) => !listing.has(x.card_id)), stats, input.squad_card_ids) : [];
+  const record = scorePast(input.past, byEa, input.series.latest);
+  const buySpend = buys.reduce((n2, b) => n2 + (b.spend ?? 0), 0), buyProfit = buys.reduce((n2, b) => n2 + (b.total_profit ?? 0), 0);
+  const sellValue = sells.reduce((n2, s) => n2 + s.after_tax, 0);
+  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action === "relist" || p.action === "lower"), pileQs = pile.filter((p) => p.action === "quicksell");
+  const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n2, i) => n2 + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
+  const steps = [];
+  if (sold.length) steps.push(`Clear ${sold.length} sold item${sold.length === 1 ? "" : "s"} on your transfer list to collect the coins.`);
+  if (pileQs.length) steps.push(`Quick sell ${pileQs.length} unsold item${pileQs.length === 1 ? "" : "s"} on your transfer list (about ${c2(pileQs.reduce((n2, p) => n2 + (p.quick_sell ?? 0), 0))} coins): they're worth more that way than relisted.`);
+  if (quick.length) steps.push(`Quick sell ${quick.length === 1 ? quick[0].name : `${quick.length} cards you don't use`} for about ${c2(quick.reduce((n2, q) => n2 + q.total, 0))} coins: listing ${quick.length === 1 ? "it" : "them"} would bring in less after tax (see Quick sell instead).`);
+  if (relist.length) steps.push(`Relist ${relist.length} item${relist.length === 1 ? "" : "s"} at today's price (see Transfer list).`);
+  if (sells.length) steps.push(`${timing.sell_bias > 0 ? "List now" : "List when it suits you"}: ${sells.slice(0, 3).map((s) => s.name).join(", ")}${sells.length > 3 ? ` and ${sells.length - 3} more` : ""}, about ${c2(sellValue)} coins after tax.`);
+  if (buys.length) steps.push(`${timing.buy_bias < 0 ? "Wait for the dip, then buy" : "Buy"} ${buys.length} card${buys.length === 1 ? "" : "s"}${buySpend ? ` for about ${c2(buySpend)} coins` : ""}, and list each at its sell price straight away${buyProfit ? ` (about ${c2(buyProfit)} profit after tax if they all sell)` : ""}.`);
+  if (reserve !== null) steps.push(`Keep ${c2(reserve)} coins (${Math.round(reserve_pct * 100)}%) back${timing.extra_reserve > 0 ? " for the drop ahead" : " for surprises"}.`);
+  if (picking.hold) steps.unshift(picking.why);
+  if (coins2 === null) steps.push("Open the EA Web App with the XI Lab helper running (or enter your coins) so the plan can size each buy.");
+  const moodText = m24 === null ? "Not enough price history yet to read the market." : `The market is ${mood === "steady" ? "steady" : mood} (middle card ${m24 > 0 ? "+" : ""}${m24}% in 24 hours${m72 !== null ? `, ${m72 > 0 ? "+" : ""}${m72}% in 3 days` : ""}).`;
+  const stanceText = { buy: "Today is a buying day.", sell: "Today is a selling day.", flip: "Today is a day for quick flips: buy cheap, list straight away." }[stance];
+  const notes = [
+    "Advice only. GafferBot never bids, buys or lists for you: EA bans automated trading. Do every trade yourself.",
+    "Prices are FUT.GG's lowest Buy Now estimates, refreshed at 06:00 and 18:00 UTC, not actual sales. Check the price in the game before you buy.",
+    `Profit is after EA's ${Math.round(RULES.transfer_tax_rate * 100)}% tax and rounded to price steps. Buy prices assume you buy at today's lowest price; sniping or bidding lower adds profit.`,
+    "The weekly rhythm (Monday lows, Thursday rewards, Friday 18:00 UK promos, Saturday highs) is community knowledge, not EA data."
+  ];
+  if (input.series.window_h < 72) notes.push(`Only ${Math.max(1, Math.round(input.series.window_h / 24))} day${input.series.window_h < 36 ? "" : "s"} of price history so far: picks get better as a full week builds up.`);
+  return {
+    as_of: new Date(input.now).toISOString(),
+    uk_date: ukClock(input.now).date,
+    prices_at: input.series.latest,
+    headline: `${stanceText} ${moodText}`,
+    stance,
+    mood: { label: mood, median_24h: m24, median_72h: m72, cards: moves.length },
+    picking: {
+      rule: picking.rule,
+      name: RULE_LABEL[picking.rule].name,
+      detail: RULE_LABEL[picking.rule].detail,
+      why: picking.why,
+      hold: picking.hold,
+      replay: picking.replay ? { ...picking.replay, rules: picking.replay.rules.map((r2) => ({ ...r2, name: RULE_LABEL[r2.rule].name, detail: RULE_LABEL[r2.rule].detail })) } : null
+    },
+    timing,
+    prices: priceFreshness(raw.series.latest, lived.live_at, raw.live === void 0 ? null : !!raw.live, input.now),
+    budget: { coins: coins2, coins_source: input.coins_source, coins_at: input.coins_at, reserve_pct: Math.round(reserve_pct * 100), reserve, spend, per_pick, buy_spend: buySpend, expected_profit: buyProfit, free_slots, risk: input.risk ?? "normal" },
+    move: bestMove({ buys, sells, pile, stance, timing, coins: coins2, sold_coins: soldCoins, prices_at: input.series.latest, now: input.now, stale: !lived.live_at && !!input.series.latest && input.now - Date.parse(input.series.latest) > 3 * 36e5 }),
+    ranges,
+    steps,
+    buys,
+    watch,
+    sells,
+    quick_sells: quick.slice(0, 12),
+    transfer_list: pile,
+    record,
+    learning: learningSummary(input.model, input.followed ?? []),
+    notes,
+    verified: false
+  };
+}
+var PRICE_RANGES = [
+  { key: "low", label: "Low price", sub: "1k to 10k", min: 1e3, max: 1e4 },
+  { key: "medium", label: "Medium price", sub: "10k to 100k", min: 1e4, max: 1e5 },
+  { key: "high", label: "High price", sub: "100k and up", min: 1e5, max: 15000001 }
+];
+function priceRanges(stats, byEa, timing, o) {
+  const all = scoreBuys([...stats].flatMap(([ea, st]) => {
+    const card = byEa.get(ea);
+    return card ? [{ card, stats: st }] : [];
+  }), timing, { max_price: 15e6, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh, rule: o.rule, market: o.market, rise: o.rise });
+  const taken = new Map(o.taken.map((b) => [b.ea_item_id, b]));
+  return PRICE_RANGES.map((r2) => {
+    const seen = /* @__PURE__ */ new Set();
+    const inRange = all.filter((b) => b.buy_at >= r2.min && b.buy_at < r2.max).filter((b) => {
+      const k = `${b.name}|${b.rating}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const sized = inRange.slice(0, 4).map((b) => {
+      const t = taken.get(b.ea_item_id);
+      if (t) return t;
+      if (o.per_pick === null) return b;
+      const maxQty = b.price >= 5e4 ? 2 : b.price >= 1e4 ? 5 : 10, qty = Math.min(Math.floor(o.per_pick / b.buy_at), maxQty, Math.max(o.cap_slots, 1));
+      return qty >= 1 ? { ...b, quantity: qty, spend: qty * b.buy_at, total_profit: qty * b.profit } : b;
+    });
+    const pick = sized[0] ?? null;
+    return { key: r2.key, label: r2.label, sub: r2.sub, pick, affordable: pick && o.per_pick !== null ? pick.buy_at <= o.per_pick : null, others: sized.slice(1) };
+  });
+}
+function priceFreshness(refresh_at, live_at, live_ok, now2) {
+  const at2 = live_at ?? refresh_at;
+  const age_h = at2 ? Math.max(0, Math.round((now2 - Date.parse(at2)) / 36e5 * 10) / 10) : null;
+  return {
+    at: at2,
+    refresh_at,
+    source: live_at ? "live" : "refresh",
+    age_h,
+    note: live_at ? `Buy Now prices are FUT.GG's newest estimates, updated about once an hour. Check the price in the game before you buy, and skip a card if it's over its "don't pay more than" price.` : `${live_ok === false ? "FUT.GG's hourly prices couldn't be loaded, so these" : "These"} prices are from the last full refresh${age_h !== null ? `, ${age_h < 1 ? "under an hour" : `${Math.round(age_h)} hour${Math.round(age_h) === 1 ? "" : "s"}`} ago` : ""}. Prices may have moved: check each one in the game first.`
+  };
+}
+function nextRefresh(now2) {
+  const d = new Date(now2), day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const slots = [day + 6 * 36e5, day + 18 * 36e5, day + 30 * 36e5];
+  return new Date(slots.find((t) => t > now2 + 20 * 6e4) ?? slots[2]).toISOString();
+}
+var CONF_CHANCE = { high: 0.6, medium: 0.45, low: 0.3 };
+var buyValue = (b) => (b.total_profit ?? b.profit) * (b.p_hit ?? CONF_CHANCE[b.confidence]);
+function bestMove(o) {
+  const base = { prices_at: o.prices_at, next_update: nextRefresh(o.now) };
+  const soldN = o.pile.filter((p) => p.action === "clear").length;
+  const first = soldN ? `First clear ${soldN} sold item${soldN === 1 ? "" : "s"} on your transfer list${o.sold_coins ? ` to collect ${c2(o.sold_coins)} coins` : ""}.` : null;
+  const buy = [...o.buys].sort((a, b) => buyValue(b) - buyValue(a))[0];
+  const sell = o.sells[0];
+  const sellFirst = !!sell && (o.stance === "sell" || !buy || sell.reason === "falling" && (sell.right_rate ?? 0.5) >= 0.5);
+  if (sell && sellFirst) {
+    const right = sell.right_rate !== null ? ` Calls like this were right ${Math.round(sell.right_rate * 100)}% of the time.` : "";
+    return {
+      ...base,
+      kind: "sell",
+      first,
+      ea_item_id: sell.ea_item_id,
+      name: sell.name,
+      coins: sell.after_tax,
+      chance: sell.right_rate,
+      title: `Sell ${sell.quantity > 1 ? `${sell.quantity}x ` : ""}${sell.name}${sell.rating ? ` (${sell.rating})` : ""} at ${c2(sell.list_at)}`,
+      detail: `${sell.why} That's about ${c2(sell.after_tax)} coins after tax. If it hasn't sold in an hour, drop to ${c2(sell.quick_at)}.${right}`
+    };
+  }
+  if (buy) {
+    const qty = buy.quantity ?? 1, chance = buy.p_hit ?? CONF_CHANCE[buy.confidence], profit = buy.total_profit ?? buy.profit;
+    const when = o.timing.buy_bias < 0 ? "Prices often dip later today, so wait for the dip if you can. " : "";
+    const odds = buy.p_hit !== null ? `Cards like this reached that price ${Math.round(buy.p_hit * 100)}% of the time` : `Confidence is ${buy.confidence}`;
+    return {
+      ...base,
+      kind: "buy",
+      first,
+      ea_item_id: buy.ea_item_id,
+      name: buy.name,
+      coins: buy.p_hit !== null ? Math.round(profit * chance) : profit,
+      chance: buy.p_hit,
+      title: `Buy ${qty > 1 ? `${qty}x ` : ""}${buy.name} (${buy.rating}) at ${c2(buy.buy_at)}, list at ${c2(buy.sell_at)}`,
+      detail: `${when}It's ${Math.round((buy.median - buy.price) / buy.median * 100)}% under its usual price. If ${qty > 1 ? "they all sell" : "it sells"}, that's ${c2(profit)} profit after tax, usually within ${buy.hold}. ${odds}. Don't pay more than ${c2(buy.max_buy)}: above that it isn't worth it after tax.${o.stale ? " These prices are old, so check the Buy Now price in the game first." : ""}${buy.quantity === null ? " Your coins aren't known, so buy as many as you can afford." : ""}`
+    };
+  }
+  const relist = o.pile.filter((p) => p.action === "relist" || p.action === "lower");
+  if (relist.length) return {
+    ...base,
+    kind: "relist",
+    first,
+    ea_item_id: relist[0].ea_item_id,
+    name: relist[0].name,
+    coins: null,
+    chance: null,
+    title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`,
+    detail: `Start with ${relist[0].name}: ${relist[0].why} Coins sitting in unsold cards can't make more coins.`
+  };
+  return {
+    ...base,
+    kind: "wait",
+    first,
+    ea_item_id: null,
+    name: null,
+    coins: null,
+    chance: null,
+    title: o.coins !== null && o.coins < 2e3 ? "Sell a few cards you don't use to get coins to trade with" : "Hold your coins until the next price update",
+    detail: o.coins !== null && o.coins < 2e3 ? "You have under 2,000 coins, which is too little to flip safely. Spare players and duplicates are the quickest coins." : "No card is cheap enough right now to flip for a safe profit after tax. Holding coins costs nothing; a bad buy does."
+  };
+}
+function learningSummary(model, followed) {
+  const done = followed.filter((t) => t.profit !== null);
+  return {
+    ready: !!model?.ready,
+    updated_at: model?.updated_at ?? null,
+    buy_picks: model?.buys.n ?? 0,
+    buy_hit_rate: model?.buys.rate ?? null,
+    hours_to_hit: model?.buys.median_hours_to_hit ?? null,
+    target_reach: model?.buys.reach ?? 1,
+    sell_calls: model?.sells.n ?? 0,
+    sell_right_rate: model?.sells.rate ?? null,
+    price_moves: model?.moves?.n ?? 0,
+    moves_up24: model?.moves?.by["12%+ under|bounced"]?.up24 ?? null,
+    moves_hit: model?.moves?.check?.hit ?? null,
+    moves_trust: model?.moves?.trust ?? null,
+    lessons: model?.lessons ?? ["Learning starts with the next price refresh: every refresh logs the day's picks and checks earlier ones against the prices since."],
+    followed: { trades: followed.length, sold: done.length, profit: done.reduce((n2, t) => n2 + (t.profit ?? 0), 0), items: followed.slice(0, 20) }
+  };
+}
+var arr = (v) => Array.isArray(v) ? v : null;
+async function dailyStrategy(db, userId, platform, opts = {}) {
+  const now2 = opts.now ?? Date.now();
+  const livePromise = opts.live !== void 0 ? Promise.resolve(opts.live) : liveFutggPrices(platform);
+  const [stateRes, clubRes, pastRes, squadRes, modelRes, tradesRes] = await Promise.all([
+    db.from("account_state").select("balance,tradepile,profile,balance_at").eq("user_id", userId).eq("platform", platform).maybeSingle(),
+    db.rpc("club_trade_value", { p_user: userId, p_platform: platform }),
+    db.from("strategy_plans").select("plan_date,prices_at,plan").eq("user_id", userId).eq("platform", platform).order("plan_date", { ascending: false }).limit(8),
+    db.from("squads").select("id").eq("user_id", userId).eq("is_active", true).limit(1),
+    db.from("strategy_model").select("model").eq("platform", platform).maybeSingle(),
+    db.from("trade_log").select("ea_item_id,bought_for,bought_at,sold_for").eq("user_id", userId).eq("platform", platform).gte("bought_at", new Date(now2 - 9 * 864e5).toISOString()).limit(500)
+  ]);
+  fail6(stateRes.error);
+  fail6(pastRes.error);
+  fail6(squadRes.error);
+  fail6(modelRes.error);
+  fail6(tradesRes.error);
+  let model = modelRes.data?.model ?? null;
+  if (clubRes.error) throw new FutError(`Your club is unavailable: ${clubRes.error.message}`, 500);
+  const state = stateRes.data ?? null;
+  const balance = state?.balance ?? null;
+  const helperCoins = typeof balance?.coins === "number" ? balance.coins : null;
+  const coins2 = opts.budget ?? helperCoins;
+  const tradepile = arr(state?.tradepile);
+  const profile = state?.profile ?? null;
+  const clubRows = arr(clubRes.data?.cards) ?? [];
+  const club = clubRows.map((r2) => ({
+    card_id: String(r2.id),
+    ea_item_id: r2.ea_item_id == null ? null : Number(r2.ea_item_id),
+    name: String(r2.player_name ?? "Card"),
+    version: r2.version ?? null,
+    rating: r2.overall == null ? null : Number(r2.overall),
+    position: r2.position ?? null,
+    tradeable_quantity: Number(r2.tradeable_quantity ?? 0),
+    price: r2.price == null ? null : Number(r2.price)
+  }));
+  const uk = ukClock(now2).date;
+  const past = (pastRes.data ?? []).filter((p) => String(p.plan_date) !== uk).slice(0, 7).map((p) => ({
+    plan_date: String(p.plan_date),
+    prices_at: p.prices_at ?? null,
+    buys: (arr(p.plan?.buys) ?? []).map((b) => ({ ea_item_id: Number(b.ea_item_id), name: String(b.name), buy_at: Number(b.buy_at), sell_at: Number(b.sell_at) }))
+  }));
+  let squad = /* @__PURE__ */ new Set();
+  const active = (squadRes.data ?? [])[0];
+  if (active) {
+    const { data, error } = await db.from("squad_slots").select("card_id").eq("squad_id", String(active.id));
+    fail6(error);
+    squad = new Set((data ?? []).flatMap((r2) => r2.card_id ? [String(r2.card_id)] : []));
+  }
+  const ids = [...new Set([
+    ...club.filter((x) => x.tradeable_quantity > 0 && x.ea_item_id).map((x) => x.ea_item_id),
+    ...(tradepile ?? []).map((t) => t.ea_item_id),
+    ...past.flatMap((p) => p.buys.map((b) => b.ea_item_id))
+  ].filter((n2) => Number.isSafeInteger(n2) && n2 > 0))].slice(0, 5e3);
+  const { data: seriesData, error: seriesErr } = await db.rpc("strategy_price_series", { p_platform: platform, p_ids: ids, p_days: 7 });
+  if (seriesErr) throw new FutError(`Prices are unavailable: ${seriesErr.message}`, 500);
+  const sd = seriesData ?? {};
+  const snaps = arr(sd.snapshots) ?? [];
+  const series = { latest: sd.latest ?? null, window_h: snaps.length ? Math.max(...snaps) : 0, cards: arr(sd.cards) ?? [] };
+  if (!model?.ready && !model?.moves) {
+    const moves = learnMoves(series.cards.filter((c4) => c4.tracked).map((c4) => ({ ...cleanSeries(c4), kind: cardKind(c4) })));
+    if (moves) model = model ? { ...model, moves, lessons: learnModel(platform, [], now2, moves).lessons } : learnModel(platform, [], now2, moves);
+  }
+  const rules = model?.rules ?? (series.latest ? replayRules(series.cards, snaps, series.latest, { max_days: 5 }) : null);
+  const plan = buildStrategy({
+    now: now2,
+    coins: coins2,
+    coins_source: opts.budget != null ? "entered" : helperCoins !== null ? "helper" : null,
+    coins_at: helperCoins !== null && opts.budget == null ? state?.balance_at ?? null : null,
+    series,
+    club: clubRows.length ? club : null,
+    tradepile,
+    tradepile_max: profile?.tradepile_max ?? null,
+    squad_card_ids: squad,
+    past,
+    risk: opts.risk,
+    model,
+    rules,
+    followed: followedTrades(past, tradesRes.data ?? []),
+    live: await livePromise
+  });
+  if (series.latest && plan.buys.length) {
+    const keep = { buys: plan.buys.map((b) => ({ ea_item_id: b.ea_item_id, name: b.name, buy_at: b.buy_at, sell_at: b.sell_at, quantity: b.quantity })), sells: plan.sells.map((s) => ({ ea_item_id: s.ea_item_id, name: s.name, list_at: s.list_at })), stance: plan.stance, mood: plan.mood };
+    fail6((await db.from("strategy_plans").upsert({ user_id: userId, platform, plan_date: uk, prices_at: series.latest, plan: keep, created_at: new Date(now2).toISOString() }, { onConflict: "user_id,platform,plan_date" })).error);
+    const cutoff = new Date(now2 - 60 * 864e5).toISOString().slice(0, 10);
+    fail6((await db.from("strategy_plans").delete().eq("user_id", userId).eq("platform", platform).lt("plan_date", cutoff)).error);
+  }
+  return { platform, ...plan };
+}
+function followedTrades(past, trades) {
+  const out = [];
+  const used = /* @__PURE__ */ new Set();
+  for (const p of past) {
+    if (!p.prices_at) continue;
+    const from = Date.parse(p.prices_at), to = from + 3 * 864e5;
+    for (const b of p.buys) {
+      for (const t of trades) {
+        const at2 = t.bought_at ? Date.parse(String(t.bought_at)) : NaN;
+        if (used.has(t) || Number(t.ea_item_id) !== b.ea_item_id || !(at2 >= from && at2 <= to) || t.bought_for == null) continue;
+        used.add(t);
+        const sold = t.sold_for == null ? null : Number(t.sold_for);
+        out.push({ plan_date: p.plan_date, ea_item_id: b.ea_item_id, name: b.name, bought_for: Number(t.bought_for), sold_for: sold, profit: sold === null ? null : net(sold) - Number(t.bought_for), target: b.sell_at });
+      }
+    }
+  }
+  return out;
+}
+var REPLAY_AHEAD_H = 48;
+var REPLAY_MIN_N = 30;
+function replayRules(cards, snapshots, latest, o = {}) {
+  const top = o.top ?? 10, maxAge = REPLAY_AHEAD_H + 24 * (o.max_days ?? 10), latestMs = Date.parse(latest);
+  if (!Number.isFinite(latestMs)) return null;
+  const tracked = cards.filter((c4) => c4.tracked && cardKind(c4) !== "silver_bronze").map((c4) => cleanSeries(c4));
+  const cuts = [];
+  for (const a of [...new Set(snapshots.map((x) => Math.round(x)))].sort((x, y) => x - y)) {
+    if (a < REPLAY_AHEAD_H || a > maxAge) continue;
+    if (cuts.length && a - cuts[cuts.length - 1] < 10) continue;
+    cuts.push(a);
+  }
+  const acc = new Map(BUY_RULES.map((r2) => [r2, { rets: [], pays: 0, fell: 0, peaks: [], refreshes: 0 }]));
+  const mkt = [];
+  let used = 0;
+  for (const a of cuts) {
+    const stats = /* @__PURE__ */ new Map(), byEa = /* @__PURE__ */ new Map(), ahead = /* @__PURE__ */ new Map();
+    for (const c4 of tracked) {
+      const idx = c4.ages.map((x, i) => x >= a - 0.5 && x <= a + 168 ? i : -1).filter((i) => i >= 0);
+      if (idx.length < 6) continue;
+      const card = { ...c4, prices: idx.map((i) => c4.prices[i]), ages: idx.map((i) => c4.ages[i] - a) };
+      if (card.ages[card.ages.length - 1] > 1) continue;
+      let p48 = null, gap = Infinity, peak = 0;
+      for (let i = 0; i < c4.ages.length; i++) {
+        const x = c4.ages[i];
+        if (x < a - 0.5 && x >= a - REPLAY_AHEAD_H - 0.5) peak = Math.max(peak, c4.prices[i]);
+        const g = Math.abs(x - (a - REPLAY_AHEAD_H));
+        if (g < gap && g <= 6) {
+          gap = g;
+          p48 = c4.prices[i];
+        }
+      }
+      if (p48 === null) continue;
+      const st = cardStats(card, Math.min(168, card.ages[0]));
+      if (!st) continue;
+      stats.set(c4.ea_item_id, st);
+      byEa.set(c4.ea_item_id, card);
+      ahead.set(c4.ea_item_id, { p48, peak: Math.max(peak, p48) });
+    }
+    if (stats.size < 50) continue;
+    used++;
+    const rets = [...stats].map(([ea, st]) => ahead.get(ea).p48 / st.latest - 1);
+    mkt.push(median4(rets));
+    const market = marketMove(stats, byEa), timing = marketTiming(latestMs - a * 36e5);
+    const list = [...stats].map(([ea, st]) => ({ card: byEa.get(ea), stats: st }));
+    for (const rule of BUY_RULES) {
+      const picks = scoreBuys(list, timing, { max_price: 15e6, min_roi: 0.03, owned: /* @__PURE__ */ new Set(), rule, market }).slice(0, top);
+      const r2 = acc.get(rule);
+      if (picks.length) r2.refreshes++;
+      for (const pk of picks) {
+        const f2 = ahead.get(pk.ea_item_id);
+        r2.rets.push(net(f2.p48) / pk.buy_at - 1);
+        r2.peaks.push(f2.peak / pk.buy_at - 1);
+        if (f2.peak >= pk.buy_at * 1.06) r2.pays++;
+        if (f2.p48 <= pk.buy_at * 0.9) r2.fell++;
+      }
+    }
+  }
+  if (!used) return null;
+  const r13 = (v) => Math.round(v * 1e3) / 10;
+  return {
+    at: latest,
+    refreshes: used,
+    days: Math.round((cuts[cuts.length - 1] - REPLAY_AHEAD_H) / 24 * 10) / 10 || 0.5,
+    market48: mkt.length ? r13(median4(mkt)) : null,
+    rules: BUY_RULES.map((rule) => {
+      const r2 = acc.get(rule), n2 = r2.rets.length;
+      return { rule, n: n2, refreshes: r2.refreshes, net48: n2 ? r13(r2.rets.reduce((x, y) => x + y, 0) / n2) : null, pays: n2 ? r13(r2.pays / n2) : null, fell10: n2 ? r13(r2.fell / n2) : null, peak_mid: n2 ? Math.round(median4(r2.peaks) * 1e3) / 1e3 : null };
+    })
+  };
+}
+function chooseRule(replay) {
+  const ok = (replay?.rules ?? []).filter((r2) => r2.n >= REPLAY_MIN_N && r2.net48 !== null).sort((x, y) => y.net48 - x.net48);
+  const best = ok[0];
+  if (!replay || !best) return { rule: DEFAULT_RULE, rise: null, hold: false, why: `Not enough past refreshes yet to test the picking rules, so it uses "${RULE_LABEL[DEFAULT_RULE].name}".`, replay: replay ?? null };
+  const days = replay.days >= 1.5 ? `${Math.round(replay.days)} days` : "the last day or two";
+  const rise = best.peak_mid !== null && best.peak_mid > 0 ? best.peak_mid : null;
+  const hold = best.net48 < 0;
+  const why = hold ? `No way of picking has made money after tax over ${days}: the best, "${RULE_LABEL[best.rule].name}", averaged ${best.net48}% 2 days later${replay.market48 !== null ? ` while the middle card moved ${replay.market48}%` : ""}. Buy less and keep coins until that turns.` : `"${RULE_LABEL[best.rule].name}" did best over ${days}: its picks averaged ${best.net48 > 0 ? "+" : ""}${best.net48}% after tax 2 days later, ${best.pays}% climbed enough to beat the tax and ${best.fell10}% fell 10% or more.`;
+  return { rule: best.rule, rise, hold, why, replay };
+}
+
+// supabase/functions/_shared/fut/coach.ts
+var EA_TAX6 = 0.05;
+var afterTax3 = (v) => Math.floor(v * (1 - EA_TAX6));
+var c3 = (n2) => Math.round(n2).toLocaleString("en-US");
+var MIN_GAIN = 4;
+function buildCoachPlan(x) {
+  const steps = [];
+  const coins2 = x.coins ?? 0;
+  const sellNow = x.advice.filter((a) => a.verdict === "sell_now" || a.verdict === "sell_high");
+  const sellSteady = x.advice.filter((a) => a.verdict === "sell");
+  const sellNowCoins = sellNow.reduce((n2, a) => n2 + (a.after_tax ?? 0), 0);
+  const steadyCoins = sellSteady.reduce((n2, a) => n2 + (a.after_tax ?? 0), 0);
+  const fodder2 = x.advice.filter((a) => a.verdict === "hold_fodder");
+  const waiting = x.advice.filter((a) => a.verdict === "wait");
+  const cashNow = coins2 + x.sold.coins;
+  const available = cashNow + sellNowCoins + steadyCoins;
+  const best = x.upgrades?.best && x.upgrades.best.gain >= MIN_GAIN ? x.upgrades.best : null;
+  const freeSwap = x.upgrades?.free.find((p) => p.gain >= 1) ?? null;
+  const upgradeCost = best?.net_cost ?? 0;
+  const needSteady = best ? Math.max(0, upgradeCost - cashNow - sellNowCoins) : 0;
+  const steadyToSell = [];
+  let raised = 0;
+  for (const a of sellSteady) {
+    if (raised >= needSteady) break;
+    steadyToSell.push(a);
+    raised += a.after_tax ?? 0;
+  }
+  const badTimeToBuy = x.timing.buy_bias < 0;
+  const goodTimeToSell = x.timing.sell_bias > 0;
+  if (x.coins === null) steps.push({
+    kind: "setup",
+    title: "Let GafferBot see your coins",
+    coins: null,
+    link: { to: "/fut/account", label: "My Account" },
+    detail: "Open the EA Web App with the XI Lab helper running. Until then this plan assumes 0 coins and only counts what you can raise by selling."
+  });
+  if (x.sold.count) steps.push({
+    kind: "collect",
+    title: `Collect ${c3(x.sold.coins)} coins from ${x.sold.count} sold item${x.sold.count === 1 ? "" : "s"}`,
+    coins: x.sold.coins,
+    detail: "Clear sold items on your transfer list: the coins aren't yours to spend until you do.",
+    link: { to: "/fut/account", label: "Transfer list" }
+  });
+  const quick = x.pile.filter((p) => p.action === "quicksell");
+  if (quick.length) {
+    const total = quick.reduce((n2, p) => n2 + (p.quick_sell ?? 0), 0);
+    steps.push({
+      kind: "relist",
+      title: `Quick sell ${quick.length} unsold item${quick.length === 1 ? "" : "s"} for about ${c3(total)} coins`,
+      coins: total,
+      detail: "They're worth more quick sold than relisted: listing pays after the 5% tax and only if they sell.",
+      link: { to: "/fut/strategy", label: "Daily Strategy" },
+      items: quick.slice(0, 5).map((p) => ({ name: p.name, rating: p.rating, coins: p.quick_sell ?? null, note: p.why }))
+    });
+  }
+  const relist = x.pile.filter((p) => p.action === "relist" || p.action === "lower");
+  if (relist.length) steps.push({
+    kind: "relist",
+    title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`,
+    coins: null,
+    detail: "Coins sitting in unsold cards can't buy upgrades.",
+    link: { to: "/fut/strategy", label: "Daily Strategy" },
+    items: relist.slice(0, 5).map((p) => ({ name: p.name, rating: p.rating, coins: p.list_at, note: p.why }))
+  });
+  const toSell = [...sellNow, ...steadyToSell];
+  if (toSell.length) {
+    const total = toSell.reduce((n2, a) => n2 + (a.after_tax ?? 0), 0);
+    steps.push({
+      kind: "sell",
+      title: `Sell ${toSell.length} card${toSell.length === 1 ? "" : "s"} you don't play for about ${c3(total)} coins`,
+      coins: total,
+      detail: [
+        sellNow.length ? `${sellNow.length === toSell.length ? toSell.length === 1 ? "It's" : "They're" : `${sellNow.length} of them ${sellNow.length === 1 ? "is" : "are"}`} falling or near ${sellNow.length === 1 ? "its" : "their"} two-week high, so ${goodTimeToSell ? "now is a good time" : "don't wait long"}.` : "",
+        steadyToSell.length ? `${steadyToSell.length === toSell.length ? toSell.length === 1 ? "It's" : "They're" : `${steadyToSell.length} ${steadyToSell.length === 1 ? "is" : "are"}`} steady in price and only sold to fund the upgrade below.` : "",
+        "None of them start in the squad you play."
+      ].filter(Boolean).join(" "),
+      link: { to: "/fut/sell", label: "Sell or Keep" },
+      items: toSell.slice(0, 8).map((a) => ({ name: a.name, rating: a.rating, coins: a.after_tax, note: a.reason, card_id: a.id }))
+    });
+  }
+  if (freeSwap && (!best || !best.swaps.some((s) => s.cost === 0 && freeSwap.swaps.some((f2) => f2.in.id === s.in.id)))) {
+    const s = freeSwap.swaps[0];
+    steps.push({
+      kind: "swap",
+      title: `Free upgrade: start ${s.in.name} (${s.in.rating ?? "?"}) instead of ${s.out.name ?? "nobody"} at ${s.position}`,
+      coins: 0,
+      detail: `It's already in your club. Team rating ${freeSwap.rating_before} to ${freeSwap.rating_after}, chemistry ${freeSwap.chem_before} to ${freeSwap.chem_after}.`,
+      link: { to: "/fut/squads", label: "Squad Builder" }
+    });
+  }
+  if (best) {
+    const buys = best.swaps.filter((s) => s.cost > 0);
+    const outSell = best.swaps.reduce((n2, s) => n2 + (s.out.sells_for ?? 0), 0);
+    const when = badTimeToBuy ? ` ${x.timing.weekday} is usually an expensive time to buy. If it can wait: ${x.timing.next ?? "buy when prices dip."}` : "";
+    steps.push({
+      kind: "upgrade",
+      title: buys.length ? `Buy ${buys.map((s) => `${s.in.name} (${s.in.rating ?? "?"}) for ${s.position}`).join(" and ")} for about ${c3(best.cost)} coins` : `Start ${best.swaps.map((s) => s.in.name).join(" and ")}`,
+      coins: -best.cost,
+      detail: [
+        `Team rating ${best.rating_before} to ${best.rating_after}, chemistry ${best.chem_before} to ${best.chem_after}${best.meta_gain ? `, ${best.meta_gain > 0 ? "+" : ""}${Math.round(best.meta_gain)} metarating` : ""}.`,
+        best.swaps.map((s) => `${s.in.name} replaces ${s.out.name ?? "an empty spot"}${s.out.sells_for ? ` (sell them for about ${c3(s.out.sells_for)})` : ""}.`).join(" "),
+        outSell ? `After selling who they replace it costs you about ${c3(best.net_cost)}.` : "",
+        when
+      ].filter(Boolean).join(" "),
+      link: { to: "/fut/squads", label: "Squad Builder" },
+      items: best.swaps.map((s) => ({ name: s.in.name, rating: s.in.rating, coins: s.cost, note: `${s.position}: replaces ${s.out.name ?? "nobody"}`, card_id: s.in.owned ? null : s.in.id }))
+    });
+  } else if (x.upgrades && x.squad.source !== "none") {
+    const dream = x.upgrades.singles[0];
+    steps.push({
+      kind: "save",
+      title: available > 0 ? `No upgrade worth buying with ${c3(available)} coins yet` : "Raise coins before upgrading",
+      coins: null,
+      detail: dream ? `The nearest one, ${dream.swaps[0].in.name}, barely moves your team.` : "Every card that would improve your squad costs more than you'd have. Grow your coins with the flip below, then check back.",
+      link: { to: "/fut/squads", label: "Squad Builder" }
+    });
+  }
+  if (x.sbc.open) {
+    const soon = x.sbc.ending[0];
+    const judged = x.sbc.sets ?? [];
+    const rank = { free: 0, do_it: 1, close: 2, unknown: 3, skip: 4 };
+    const sorted = [...judged].sort((a, b) => rank[a.verdict] - rank[b.verdict] || (b.reward_value ?? 0) - b.total_cost - ((a.reward_value ?? 0) - a.total_cost));
+    const good = sorted.filter((v) => v.verdict === "free" || v.verdict === "do_it");
+    const unread = x.sbc.unread ?? Math.max(0, x.sbc.open - judged.length);
+    const label = { free: "Free", do_it: "Do it", close: "About even", unknown: "Reward unknown", skip: "Skip" };
+    const gainOfSet = good.reduce((n2, v) => n2 + Math.max(0, (v.reward_value ?? 0) - v.total_cost), 0);
+    steps.push({
+      kind: "sbc",
+      title: good.length ? `Do ${good.length === 1 ? `the ${good[0].name} SBC` : `${good.length} SBCs: ${good.slice(0, 3).map((v) => v.name).join(", ")}${good.length > 3 ? ` and ${good.length - 3} more` : ""}`}` : judged.length ? `No open SBC beats its cost right now (${judged.length} checked)` : `${x.sbc.open} SBC${x.sbc.open === 1 ? "" : "s"} open: check which are worth doing with your club`,
+      coins: good.length && gainOfSet ? gainOfSet : null,
+      detail: [
+        good.length ? `${good.length === 1 ? "Its reward is" : "Their rewards are"} worth more than the cards ${good.length === 1 ? "it takes" : "they take"} from your club and the market. Your starters are never used.` : "",
+        !good.length && judged.length ? "Each was filled from your club and the cheapest market cards, without touching your starters, and the reward didn't cover the cost." : "",
+        fodder2.length ? `You're holding ${fodder2.length} card${fodder2.length === 1 ? "" : "s"} as SBC fodder (cheaper to use than to sell).` : "",
+        soon ? `${soon.name} ends ${soon.end_at.slice(0, 10)}.` : "",
+        unread ? `${unread} more ${unread === 1 ? "hasn't" : "haven't"} been read yet: open ${unread === 1 ? "it" : "them"} in the EA Web App with the helper running and ${unread === 1 ? "it'll" : "they'll"} be judged here too.` : "",
+        judged.length ? "" : "SBC Solver fills each one from your club and says whether the reward beats the cost."
+      ].filter(Boolean).join(" "),
+      link: { to: "/fut/sbc", label: "SBC Solver" },
+      items: sorted.slice(0, 6).map((v) => ({ name: v.name, rating: null, coins: v.feasible ? v.total_cost : null, note: `${label[v.verdict]}: ${v.why}` }))
+    });
+  }
+  const left = Math.max(0, cashNow + sellNowCoins + raised - (best?.net_cost ?? 0));
+  const flip = x.flips.find((f2) => f2.buy_at <= left);
+  if (flip) steps.push({
+    kind: "flip",
+    title: `With the ${c3(left)} left: buy ${flip.name} (${flip.rating}) at ${c3(flip.buy_at)}, list at ${c3(flip.sell_at)}`,
+    coins: flip.profit,
+    detail: `Daily Strategy's best flip you can afford: about ${c3(flip.profit)} profit after tax if it sells.${badTimeToBuy ? " Prices often dip later, so wait for the dip if you can." : ""}`,
+    link: { to: "/fut/strategy", label: "Daily Strategy" }
+  });
+  else if (!best && x.move && x.move.kind !== "wait") steps.push({
+    kind: "flip",
+    title: x.move.title,
+    coins: x.move.coins,
+    detail: x.move.detail,
+    link: { to: "/fut/strategy", label: "Daily Strategy" }
+  });
+  else if (!steps.some((s) => s.kind === "upgrade" || s.kind === "flip")) steps.push({
+    kind: "hold",
+    title: "Hold your coins for now",
+    coins: null,
+    link: { to: "/fut/strategy", label: "Daily Strategy" },
+    detail: x.move?.detail ?? "Nothing is cheap enough to flip for a safe profit right now. Holding coins costs nothing; a bad buy does."
+  });
+  const upgradeStep = steps.find((s) => s.kind === "upgrade");
+  const flipStep = steps.find((s) => s.kind === "flip");
+  const sellStep = steps.find((s) => s.kind === "sell");
+  let headline;
+  if (x.squad.source === "none") headline = { kind: "setup", title: "Sync your club first", detail: x.squad.note };
+  else if (upgradeStep) headline = {
+    kind: "upgrade",
+    title: `Upgrade your squad: ${upgradeStep.title.charAt(0).toLowerCase()}${upgradeStep.title.slice(1)}`,
+    detail: `${best.rating_before} to ${best.rating_after} team rating.${sellStep && best.net_cost > cashNow ? " Sell the cards you don't play first to afford it." : ""}${badTimeToBuy ? " Prices usually peak right now, so buy after the dip if you can wait." : ""}`
+  };
+  else if (sellStep && !flipStep) headline = { kind: "sell", title: "Sell the cards you don't play and save up", detail: `${sellStep.title}. No upgrade is worth it yet.` };
+  else if (flipStep) headline = { kind: "flip", title: "Grow your coins: no upgrade is worth buying yet", detail: flipStep.title };
+  else headline = { kind: "hold", title: "Hold your coins", detail: "No upgrade is worth it and nothing is cheap enough to flip right now." };
+  return {
+    headline,
+    steps,
+    money: { coins: x.coins, coins_at: x.coins_at, sold: x.sold.coins, sell_now: sellNowCoins, sell_steady: steadyCoins, available, upgrade_cost: best?.net_cost ?? null, left },
+    squad: x.squad,
+    timing: x.timing,
+    keep: { fodder: fodder2.length, waiting: waiting.length },
+    others: (x.upgrades?.pairs.length ? x.upgrades.pairs : x.upgrades?.singles ?? []).filter((p) => p !== best).slice(0, 4),
+    prices_at: x.prices_at
+  };
+}
+async function playingNow(db, userId, known) {
+  const cur = known ?? await currentSquad(db, userId);
+  if (cur.source !== "game" || !cur.squad) return /* @__PURE__ */ new Map();
+  return new Map(cur.squad.slots.flatMap((s) => s.card ? [[s.card.id, "the squad you play"]] : []));
+}
+var settle = async (p, what) => {
+  try {
+    return await p;
+  } catch (e) {
+    console.error(`[fut-api] coins plan ${what}:`, e.message);
+    return null;
+  }
+};
+async function coachPlan(db, userId, platform) {
+  const [stateRes, cur] = await Promise.all([
+    db.from("account_state").select("balance,balance_at,tradepile,sbcs,sbcs_at").eq("user_id", userId).eq("platform", platform).maybeSingle(),
+    currentSquad(db, userId)
+  ]);
+  if (stateRes.error) throw new FutError(`Your account is unavailable: ${stateRes.error.message}`, 500);
+  const state = stateRes.data ?? null;
+  const n2 = Number(state?.balance?.coins);
+  const coins2 = state?.balance && Number.isFinite(n2) ? n2 : null;
+  const pileRaw = Array.isArray(state?.tradepile) ? state.tradepile : [];
+  const soldItems = pileRaw.filter((i) => i.state === "sold");
+  const sold = { count: soldItems.length, coins: soldItems.reduce((t, i) => t + afterTax3(Number(i.current_bid ?? i.buy_now ?? 0) || 0), 0) };
+  const starters = cur.squad ? cur.squad.slots.flatMap((s) => s.card ? [s.card.id] : []) : [];
+  const [keep, strat, sbcs] = await Promise.all([
+    settle(sellOrKeep(db, userId, platform, void 0, () => playingNow(db, userId, cur)), "sell or keep"),
+    settle(dailyStrategy(db, userId, platform), "daily strategy"),
+    settle(sbcVerdicts(db, userId, platform, starters), "sbcs")
+  ]);
+  const advice = keep?.advice ?? [];
+  const sellable = advice.filter((a) => a.verdict === "sell_now" || a.verdict === "sell_high" || a.verdict === "sell").reduce((t, a) => t + (a.after_tax ?? 0), 0);
+  const budget = Math.min(15e6, Math.max(0, (coins2 ?? 0) + sold.coins + sellable));
+  const upgrades = cur.squad && cur.squad.slots.some((s) => s.card) ? await settle(upgradeOptions(db, userId, cur.squad, { budget, platform }), "upgrades") : null;
+  let chemistry = null, rating2 = null;
+  if (cur.squad) {
+    try {
+      const rules = await activeRules(db);
+      chemistry = evaluate(cur.squad.formation, cur.squad.slots, cur.squad.manager, rules).total;
+      const r2 = cur.squad.slots.flatMap((s) => s.card ? [s.card.rating ?? 0] : []);
+      rating2 = upgrades?.before.rating ?? (r2.length ? Math.round(r2.reduce((a, b) => a + b, 0) / r2.length) : null);
+    } catch (e) {
+      console.error("[fut-api] coins plan chemistry:", e.message);
+    }
+  }
+  const sets = Array.isArray(state?.sbcs) ? state.sbcs : [];
+  const open = sets.filter((s) => !(s.times_completed && !s.repeatable) && !(s.repeat_limit && Number(s.times_completed ?? 0) >= Number(s.repeat_limit)));
+  const ending = open.filter((s) => typeof s.end_at === "string" && Date.parse(s.end_at) > Date.now()).sort((a, b) => String(a.end_at).localeCompare(String(b.end_at))).slice(0, 3).map((s) => ({ name: String(s.name ?? "SBC"), end_at: String(s.end_at) }));
+  const plan = buildCoachPlan({
+    coins: coins2,
+    coins_at: state?.balance_at ?? null,
+    squad: { source: cur.source, note: cur.note, name: cur.squad?.name ?? null, formation: cur.squad?.formation ?? null, rating: rating2, chemistry },
+    sold,
+    pile: strat?.transfer_list ?? [],
+    advice,
+    upgrades: upgrades ? { best: upgrades.best, singles: upgrades.singles, pairs: upgrades.pairs, free: upgrades.free } : null,
+    timing: strat?.timing ?? { now: "", next: null, buy_bias: 0, sell_bias: 0, events: [], weekday: "", uk_time: "" },
+    move: strat?.move ?? null,
+    flips: (strat?.buys ?? []).map((b) => ({ name: b.name, rating: b.rating, buy_at: b.buy_at, sell_at: b.sell_at, profit: b.profit, ea_item_id: b.ea_item_id })),
+    sbc: { open: open.length, ending, seen_at: state?.sbcs_at ?? null, sets: sbcs?.sets ?? [], unread: sbcs ? sbcs.unread : open.length },
+    prices_at: strat?.prices_at ?? keep?.prices_at ?? null
+  });
+  const notes = [
+    "Advice only. GafferBot never buys, sells or lists for you: do every trade yourself in the game.",
+    "Prices are FUT.GG's lowest Buy Now estimates, not actual sales. Check the price in the game before you buy.",
+    `Selling counts EA's ${Math.round(EA_TAX6 * 100)}% tax. Upgrades are scored on team rating, chemistry and how well each card plays its position (metarating).`
+  ];
+  if (!keep) notes.push("Your sell list couldn't be read just now, so it isn't in this plan.");
+  if (!strat) notes.push("Today's market plan couldn't be built just now, so flips and timing are missing.");
+  return { platform, ...plan, notes, verified: false };
+}
+
+// supabase/functions/_shared/fut/account.ts
+var fail7 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "evolutions", "objectives", "season"];
+var EA_TAX7 = 0.05;
+var HISTORY_EVERY_MS = 6 * 36e5;
+var afterTax4 = (v) => Math.floor(v * (1 - EA_TAX7));
+function named(items, cards) {
+  return items.map((i) => {
+    const c4 = cards.get(i.ea_item_id);
+    return { ...i, name: c4?.player_name ?? `${i.item_type && i.item_type !== "player" ? i.item_type : "Item"} ${i.ea_item_id}`, version: c4?.version ?? null, position: c4?.position ?? null, price: c4?.price ?? null, rating: i.rating ?? c4?.overall ?? null };
+  });
+}
+function tradepileSummary(items, max) {
+  const by = (s) => items.filter((i) => i.state === s);
+  const sold = by("sold"), listed = by("listed"), expired = by("expired"), unlisted = by("unlisted");
+  const soldFor = sold.reduce((n2, i) => n2 + (i.current_bid ?? i.buy_now ?? 0), 0);
+  const marketValue = (list) => list.reduce((n2, i) => n2 + (i.untradeable ? 0 : i.price ?? 0), 0);
+  return {
+    total: items.length,
+    max,
+    listed: listed.length,
+    sold: sold.length,
+    expired: expired.length,
+    unlisted: unlisted.length,
+    sold_for: soldFor,
+    sold_after_tax: afterTax4(soldFor),
+    listed_buy_now: listed.reduce((n2, i) => n2 + (i.buy_now ?? 0), 0),
+    listed_after_tax: afterTax4(listed.reduce((n2, i) => n2 + (i.buy_now ?? 0), 0)),
+    idle_market_value: marketValue([...expired, ...unlisted]),
+    overpriced: listed.filter((i) => i.price && i.buy_now && i.buy_now > i.price * 1.25).length
+  };
+}
+function watchlistSummary(items) {
+  const by = (s) => items.filter((i) => i.state === s);
+  return {
+    total: items.length,
+    winning: by("winning").length,
+    outbid: by("outbid").length,
+    won: by("won").length,
+    lost: by("lost").length,
+    coins_in_bids: by("winning").reduce((n2, i) => n2 + (i.current_bid ?? 0), 0)
+  };
+}
+var hoursLeft = (iso3, now2) => iso3 ? (Date.parse(iso3) - now2) / 36e5 : null;
+function accountTips(o) {
+  const tips = [];
+  const c4 = (n2) => n2.toLocaleString("en-US");
+  if (o.trade) {
+    if (o.trade.sold) tips.push(`${o.trade.sold} sold on your transfer list for ${c4(o.trade.sold_for)} coins (${c4(o.trade.sold_after_tax)} after tax). Clear them to free the slots.`);
+    if (o.trade.expired) tips.push(`${o.trade.expired} listing${o.trade.expired === 1 ? "" : "s"} expired${o.trade.idle_market_value ? `, worth about ${c4(o.trade.idle_market_value)} coins at FUT.GG prices` : ""}. Relist or send them to your club.`);
+    if (o.trade.overpriced) tips.push(`${o.trade.overpriced} listing${o.trade.overpriced === 1 ? " is" : "s are"} priced more than 25% above FUT.GG's latest price and may not sell.`);
+    if (o.trade.max && o.trade.total >= o.trade.max * 0.9) tips.push(`Your transfer list is ${o.trade.total}/${o.trade.max} full.`);
+  }
+  if (o.watch) {
+    if (o.watch.won) tips.push(`${o.watch.won} won item${o.watch.won === 1 ? "" : "s"} in your Transfer Targets to send to your club.`);
+    if (o.watch.outbid) tips.push(`You've been outbid on ${o.watch.outbid} item${o.watch.outbid === 1 ? "" : "s"}.`);
+  }
+  if (o.unassigned?.length) {
+    const dupes = o.unassigned.filter((u) => u.duplicate);
+    tips.push(`${o.unassigned.length} item${o.unassigned.length === 1 ? "" : "s"} unassigned${dupes.length ? `, ${dupes.length} duplicate${dupes.length === 1 ? "" : "s"} (${dupes.filter((d) => d.untradeable).length} untradeable: SBC fodder)` : ""}. Sort them in the Web App before your next pack.`);
+  }
+  for (const s of (o.sbcs ?? []).filter((s2) => {
+    const h = hoursLeft(s2.end_at, o.now);
+    return h !== null && h > 0 && h <= 24 && (s2.completed ?? 0) < (s2.challenges ?? 1) && !(s2.times_completed && !s2.repeatable);
+  }).slice(0, 3)) {
+    tips.push(`SBC "${s.name}" ends in ${Math.max(1, Math.round(hoursLeft(s.end_at, o.now)))} hours${s.challenges ? ` (${s.completed ?? 0}/${s.challenges} done)` : ""}.`);
+  }
+  const ending = (o.objectives ?? []).filter((x) => {
+    const h = hoursLeft(x.end_at, o.now);
+    return !x.done && h !== null && h > 0 && h <= 24;
+  });
+  if (ending.length) tips.push(`${ending.length} objective${ending.length === 1 ? "" : "s"} not done end in the next 24 hours.`);
+  return tips;
+}
+var arr2 = (v) => Array.isArray(v) ? v : null;
+async function accountOverview(db, userId, platform, now2 = Date.now()) {
+  const [stateRes, histRes] = await Promise.all([
+    db.from("account_state").select("*").eq("user_id", userId).eq("platform", platform).maybeSingle(),
+    db.from("account_balance_history").select("at, coins, points, draft_tokens").eq("user_id", userId).eq("platform", platform).order("at", { ascending: false }).limit(500)
+  ]);
+  fail7(stateRes.error);
+  fail7(histRes.error);
+  const s = stateRes.data ?? null;
+  const trade = arr2(s?.tradepile), watch = arr2(s?.watchlist), un = arr2(s?.unassigned);
+  const ids = [...new Set([...trade ?? [], ...watch ?? [], ...un ?? []].map((i) => i.ea_item_id))].slice(0, 2e3);
+  let cards = /* @__PURE__ */ new Map(), prices_at = null;
+  if (ids.length) {
+    const { data, error } = await db.rpc("account_item_prices", { p_platform: platform, p_ids: ids });
+    if (error) throw new FutError(`Card prices are unavailable: ${error.message}`, 500);
+    prices_at = data?.published_at ?? null;
+    cards = new Map((data?.items ?? []).map((c4) => [Number(c4.ea_item_id), c4]));
+  }
+  const profile = s?.profile ?? null;
+  const tradeN = trade ? named(trade, cards) : null, watchN = watch ? named(watch, cards) : null, unN = un ? named(un, cards) : null;
+  const tradeSum = tradeN ? tradepileSummary(tradeN, profile?.tradepile_max ?? null) : null, watchSum = watchN ? watchlistSummary(watchN) : null;
+  const sbcs = arr2(s?.sbcs), objectives = arr2(s?.objectives);
+  const at2 = (k) => s?.[`${k}_at`] ?? null;
+  const ORDER2 = { sold: 0, expired: 1, listed: 2, unlisted: 3, won: 0, winning: 1, outbid: 2, watching: 3, lost: 4 };
+  const sortTrades = (l) => [...l].sort((a, b) => (ORDER2[a.state] ?? 9) - (ORDER2[b.state] ?? 9) || (a.expires_at ?? "~").localeCompare(b.expires_at ?? "~") || (b.price ?? 0) - (a.price ?? 0));
+  const sbcOpen = (x) => !(x.times_completed && !x.repeatable) && !(x.repeat_limit && (x.times_completed ?? 0) >= x.repeat_limit);
+  return {
+    platform,
+    connected: !!s,
+    updated_at: s?.updated_at ?? null,
+    prices_at,
+    seen: Object.fromEntries(SECTIONS.map((k) => [k, at2(k)])),
+    balance: s?.balance ?? null,
+    profile,
+    history: (histRes.data ?? []).reverse().map((h) => ({ t: String(h.at), coins: h.coins, points: h.points, draft_tokens: h.draft_tokens })),
+    tradepile: tradeN ? { summary: tradeSum, items: sortTrades(tradeN) } : null,
+    watchlist: watchN ? { summary: watchSum, items: sortTrades(watchN) } : null,
+    unassigned: unN ? {
+      total: unN.length,
+      duplicates: unN.filter((u) => u.duplicate).length,
+      tradeable_value: unN.reduce((n2, u) => n2 + (u.untradeable ? 0 : u.price ?? 0), 0),
+      items: [...unN].sort((a, b) => (b.price ?? 0) - (a.price ?? 0) || (b.rating ?? 0) - (a.rating ?? 0))
+    } : null,
+    sbcs: sbcs ? {
+      total: sbcs.length,
+      open: sbcs.filter(sbcOpen).length,
+      items: [...sbcs].sort((a, b) => Number(!sbcOpen(a)) - Number(!sbcOpen(b)) || (a.end_at ?? "~").localeCompare(b.end_at ?? "~") || a.name.localeCompare(b.name))
+    } : null,
+    objectives: objectives ? {
+      total: objectives.length,
+      done: objectives.filter((o) => o.done).length,
+      xp_left: objectives.filter((o) => !o.done).reduce((n2, o) => n2 + (o.xp ?? 0), 0),
+      items: [...objectives].sort((a, b) => Number(a.done) - Number(b.done) || (a.end_at ?? "~").localeCompare(b.end_at ?? "~"))
+    } : null,
+    season: s?.season ?? null,
+    tips: accountTips({ now: now2, trade: tradeSum, watch: watchSum, unassigned: unN, sbcs, objectives }),
+    shape: s?.shape ?? null,
+    verified: false
+  };
+}
+
+// supabase/functions/_shared/fut/knowledge-team.ts
+var DEFAULT_MODEL = "claude-opus-5-5";
+var POSITION_ORDER = ["GK", "LB", "CB", "RB", "CDM", "CM", "LM", "RM", "CAM", "LW", "RW", "ST"];
+var posRank = (p) => {
+  const i = POSITION_ORDER.indexOf(p);
+  return i < 0 ? 99 : i;
+};
+async function rpcData2(db, name2, args) {
+  const { data, error } = await db.rpc(name2, args);
+  if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
+  return data;
+}
+var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+function fold(s) {
+  return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ø/g, "o").replace(/ł/g, "l").replace(/đ/g, "d").replace(/ı/g, "i").replace(/ß/g, "ss");
+}
+async function loadTeam(db, userId, squadId2, platform = "console") {
+  const team2 = { squad: null, squads: [], club: [], coins: null };
+  try {
+    const squads = await new PgSquadStore(db).list(userId);
+    team2.squads = squads.map((s2) => ({ id: s2.id, name: s2.name, formation: s2.formation }));
+    const s = (squadId2 ? squads.find((x) => x.id === squadId2) : null) ?? squads[0];
+    if (s) team2.squad = { id: s.id, name: s.name, formation: s.formation, xi: s.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
+  } catch (e) {
+    console.error("[fut-api] knowledge team squads:", e);
+  }
+  try {
+    const cards = await searchMyCards(db, userId, { all: true, owned_only: true });
+    team2.club = cards.map((c4) => ({ name: c4.player_name, rating: c4.overall, positions: c4.positions, version: c4.version, playstyles: c4.playstyles, playstyles_plus: c4.playstyles_plus }));
+  } catch (e) {
+    console.error("[fut-api] knowledge team cards:", e);
+  }
+  try {
+    const { data } = await db.from("account_state").select("balance").eq("user_id", userId).eq("platform", platform).maybeSingle();
+    const coins2 = Number(data?.balance?.coins);
+    team2.coins = Number.isFinite(coins2) ? coins2 : null;
+  } catch (e) {
+    console.error("[fut-api] knowledge team coins:", e);
+  }
+  return team2;
+}
+function describeTeam(team2) {
+  const lines = [];
+  if (team2.squad) {
+    const xi = team2.squad.xi.map((x) => `${x.slot} ${x.name ? `${x.name}${x.rating ? ` ${x.rating}` : ""}` : "(empty)"}`).join(", ");
+    lines.push(`Squad "${team2.squad.name}" in ${team2.squad.formation}: ${xi}`);
+  } else lines.push("No saved squad.");
+  if (team2.club.length) {
+    const inXi = new Set((team2.squad?.xi ?? []).map((x) => x.name && fold(x.name)).filter(Boolean));
+    const bench = team2.club.filter((c4) => !inXi.has(fold(c4.name))).slice(0, 40);
+    const card = (c4) => `${c4.name} (${c4.positions.join("/")} ${c4.rating}${c4.version ? ` ${c4.version}` : ""}${c4.playstyles_plus.length ? `; PS+ ${c4.playstyles_plus.join(", ")}` : ""})`;
+    const xiCards = team2.club.filter((c4) => inXi.has(fold(c4.name)));
+    if (xiCards.length) lines.push(`Squad players' cards: ${xiCards.map(card).join("; ")}`);
+    lines.push(`Other club cards (best ${bench.length} of ${team2.club.length}): ${bench.map(card).join("; ") || "none"}`);
+  } else lines.push("No club cards synced.");
+  if (team2.coins != null) lines.push(`Coins: ${team2.coins.toLocaleString("en")}`);
+  return lines.join("\n");
+}
+function formationName(text2) {
+  const m = text2.match(/(?<![\d-])([3-5])-?([1-5])-?([1-5])(?:-?([1-5]))?(?:-?([1-5]))?(?![\d-])\s*(?:\((\d)\))?\s*([a-z ]{0,20})/i);
+  if (!m) return null;
+  const parts = m.slice(1, 6).filter(Boolean);
+  if (parts.reduce((a, b) => a + Number(b), 0) !== 10) return null;
+  const base = parts.join("-");
+  const variant = m[6] ?? null;
+  const word = (m[7] ?? "").toLowerCase();
+  if (variant && FORMATIONS[`${base} (${variant})`]) return `${base} (${variant})`;
+  const WORDS2 = {
+    "4-2-3-1": [[/\bwide\b/, " (2)"], [/\bnarrow\b/, ""]],
+    "4-1-2-1-2": [[/\bnarrow\b/, " (2)"], [/\bwide\b/, ""]],
+    "4-4-2": [[/\bholding\b/, " (2)"], [/\bflat\b/, ""]],
+    "4-5-1": [[/\bflat\b/, " (2)"], [/\battack/, ""]],
+    "4-3-3": [[/\bholding\b/, " (2)"], [/\bdefen[cs]/, " (3)"], [/\battack/, " (4)"]]
+  };
+  for (const [re, suffix] of WORDS2[base] ?? []) if (re.test(word) && FORMATIONS[`${base}${suffix}`]) return `${base}${suffix}`;
+  return FORMATIONS[base] ? base : null;
+}
+function wordIn(haystack, needle) {
+  if (needle.length < 3) return false;
+  const i = haystack.indexOf(needle);
+  if (i < 0) return false;
+  const ok = (ch) => !ch || !/[a-z0-9]/.test(ch);
+  for (let at2 = i; at2 >= 0; at2 = haystack.indexOf(needle, at2 + 1)) if (ok(haystack[at2 - 1]) && ok(haystack[at2 + needle.length])) return true;
+  return false;
+}
+function mentions2(text2, name2) {
+  const t = fold(text2), n2 = fold(name2).trim();
+  if (wordIn(t, n2)) return true;
+  const last = n2.split(/\s+/).at(-1) ?? "";
+  return last.length >= 4 && last !== n2 ? wordIn(t, last) : n2.length >= 4 && !n2.includes(" ") && wordIn(t, n2);
+}
+async function claudeJson(env, fetchFn, system, user, schema, maxTokens) {
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL,
+    max_tokens: maxTokens,
+    output_config: { effort: "low", format: { type: "json_schema", schema } },
+    system,
+    messages: [{ role: "user", content: user }]
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("[fut-api] knowledge team Claude:", res.status, out?.error?.message);
+    return null;
+  }
+  if (out?.stop_reason === "refusal") return null;
+  try {
+    return JSON.parse((out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join(""));
+  } catch {
+    return null;
+  }
+}
+var pctMove = (now2, then) => now2 && then ? Math.round((now2 - then) / then * 1e3) / 10 : null;
+function priceOutlook(t, owned) {
+  if (!t || !t.price) return null;
+  const c32 = pctMove(t.price, t.d3 ?? t.d1), c7 = pctMove(t.price, t.d7);
+  const spread = !!(t.high14 && t.low14 && t.high14 > t.low14 * 1.1);
+  const falling = c32 !== null && c32 <= -4 || c7 !== null && c7 <= -8;
+  const nearLow = spread && t.price <= t.low14 * 1.05, nearHigh = spread && t.price >= t.high14 * 0.95;
+  const rising = c32 !== null && c32 >= 4 || c7 !== null && c7 >= 8;
+  const move = c32 !== null ? `${c32 > 0 ? "+" : ""}${c32}% in 3 days` : c7 !== null ? `${c7 > 0 ? "+" : ""}${c7}% in 7 days` : "";
+  const range = t.low14 && t.high14 ? `${t.low14.toLocaleString("en")} to ${t.high14.toLocaleString("en")} in two weeks` : "";
+  const [signal, call4] = falling ? ["falling", owned ? `Falling (${move}): if you don't play him, sell before it drops further.` : `Falling (${move}): wait, it should get cheaper.`] : nearLow ? ["near_low", owned ? `Near its two-week low (${range}): hold, a bad time to sell.` : `Near its two-week low (${range}): a good time to buy.`] : nearHigh ? ["near_high", owned ? `Near its two-week high (${range}): a good time to sell if he isn't in your team.` : `Near its two-week high (${range}): expensive right now, wait for a dip.`] : rising ? ["rising", owned ? `Rising (${move}): hold.` : `Rising (${move}): buy soon if you want him, or wait for the next dip.`] : ["steady", owned ? "Price is steady." : "Price is steady: buy whenever it suits."];
+  return { change_3d: c32, change_7d: c7, low14: t.low14, high14: t.high14, signal, call: call4 };
+}
+function rankFormations(topics, cite) {
+  const by = /* @__PURE__ */ new Map();
+  for (const t of topics) {
+    if (t.category !== "formations") continue;
+    const f2 = formationName(t.topic);
+    if (!f2) continue;
+    const prev = by.get(f2);
+    const net2 = t.net ?? 0;
+    if (!prev) {
+      by.set(f2, { ...pickOf(t, cite), formation: f2, score: 0, w: t.buzz * net2 });
+    } else {
+      prev.w += t.buzz * net2;
+      prev.buzz += t.buzz;
+      prev.claims += t.claims;
+      prev.for += t.for;
+      prev.against += t.against;
+      prev.net = prev.buzz ? Math.round(prev.w / prev.buzz * 1e3) / 1e3 : prev.net;
+      if (t.buzz > prev.buzz - t.buzz) {
+        prev.key = t.key;
+        prev.topic = t.topic;
+        prev.agreement = t.agreement;
+        prev.said = t.statements[0]?.statement ?? prev.said;
+        prev.cite = cite(t) ?? prev.cite;
+      }
+    }
+  }
+  return [...by.values()].map(({ w, ...p }) => ({ ...p, buzz: Math.round(p.buzz * 100) / 100, score: Math.round(w * 100) / 100 })).sort((a, b) => b.score - a.score || b.buzz - a.buzz);
+}
+function pickOf(t, cite) {
+  const lead = t.statements.find((s) => Math.sign(s.stance) === Math.sign(t.net ?? 0)) ?? t.statements[0];
+  return { key: t.key, topic: t.topic, net: t.net, buzz: t.buzz, agreement: t.agreement, claims: t.claims, for: t.for, against: t.against, said: lead?.statement ?? null, cite: cite(t) };
+}
+function sides(topics, category, cite, n2 = 8) {
+  const list = topics.filter((t) => t.category === category);
+  const score2 = (t) => t.buzz * Math.abs(t.net ?? 0);
+  return {
+    recommended: list.filter((t) => (t.net ?? 0) > 0.15).sort((a, b) => score2(b) - score2(a)).slice(0, n2).map((t) => pickOf(t, cite)),
+    avoid: list.filter((t) => (t.net ?? 0) < -0.15).sort((a, b) => score2(b) - score2(a)).slice(0, Math.ceil(n2 / 2)).map((t) => pickOf(t, cite))
+  };
+}
+function playerLookup(topic) {
+  const cleaned = fold(topic).replace(/\([^)]*\)/g, " ").replace(/\b(totw|tots|toty|fut|base|gold|rare|icon|hero|heroes|evo(lution)?s?|sbc|objective|promo|card|version|special|future stars|fantasy|road to the knockouts|rttk|ucl|uel|uecl|team of the (week|season|year)|winter wildcards|thunderstruck|centurions|trailblazers|flashback|showdown|ones to watch|otw|[0-9]{2}\s*(ovr|rated)?)\b/g, " ").replace(/[^a-z' -]/g, " ").replace(/\s+/g, " ").trim();
+  if (cleaned.length < 3) return null;
+  const words = cleaned.split(" ").filter((w) => w.length > 1);
+  const last = words.at(-1) ?? "";
+  return { name: cleaned, last: words.length > 1 && /^[a-z]{4,}$/.test(last) ? last : "" };
+}
+function formationPositions(formation) {
+  const out = /* @__PURE__ */ new Map();
+  for (const s of FORMATIONS[formation] ?? []) out.set(s.position, (out.get(s.position) ?? 0) + 1);
+  return new Map([...out].sort((a, b) => POSITION_ORDER.indexOf(a[0]) - POSITION_ORDER.indexOf(b[0])));
+}
+var PLAN_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "formation_why", "settings", "instructions", "for_your_team", "player_positions"],
+  properties: {
+    summary: { type: "string" },
+    formation_why: { type: "string" },
+    settings: { type: "array", items: { type: "object", additionalProperties: false, required: ["setting", "value", "why", "cites", "inferred"], properties: {
+      setting: { type: "string" },
+      value: { type: "string" },
+      why: { type: "string" },
+      cites: { type: "array", items: { type: "integer" } },
+      inferred: { type: "boolean" }
+    } } },
+    instructions: { type: "array", items: { type: "object", additionalProperties: false, required: ["position", "instruction", "why", "cites", "inferred"], properties: {
+      position: { type: "string" },
+      instruction: { type: "string" },
+      why: { type: "string" },
+      cites: { type: "array", items: { type: "integer" } },
+      inferred: { type: "boolean" }
+    } } },
+    for_your_team: { type: "array", items: { type: "string" } },
+    player_positions: { type: "array", items: { type: "object", additionalProperties: false, required: ["topic", "position"], properties: {
+      topic: { type: "string" },
+      position: { type: "string", enum: POSITION_ORDER }
+    } } }
+  }
+};
+var cache2 = /* @__PURE__ */ new Map();
+var THIN_CLAIMS = 40;
+var DEFAULT_FORMATION = "4-2-3-1";
+function defaultStatPicker(db, userId, platform) {
+  return async (position, maxPrice) => {
+    const top = await metaTop(db, userId, { position, platform, max_price: maxPrice });
+    return top.cards.slice(0, 12).map((c4) => ({
+      card_id: c4.card_id,
+      ea_item_id: c4.ea_item_id,
+      name: c4.name,
+      rating: c4.rating,
+      version: c4.version,
+      price: c4.price,
+      owned: c4.owned,
+      score: c4.meta.score,
+      role: c4.meta.role,
+      why: [c4.meta.strengths.slice(0, 2).join(", "), c4.meta.playstyles.slice(0, 2).join(", ")].filter(Boolean).join("; ")
+    }));
+  };
+}
+var CACHE_MS = 6 * 36e5;
+async function readConsensus(db, userId, days) {
+  const read = (d) => rpcData2(db, "kb_consensus", { p_user: userId, p_days: d, p_per: 60, p_statements: 4 });
+  let consensus = await read(days), widenedFrom = null;
+  if ((consensus?.claims ?? 0) < THIN_CLAIMS && days < 365) {
+    const all = await read(365);
+    if ((all?.claims ?? 0) > (consensus?.claims ?? 0)) {
+      consensus = all;
+      widenedFrom = days;
+    }
+  }
+  return { consensus, widenedFrom };
+}
+async function communityFormations(db, userId, days) {
+  const { consensus, widenedFrom } = await readConsensus(db, userId, days);
+  const topics = consensus?.topics ?? [];
+  return { ranked: rankFormations(topics, () => null), tactics: sides(topics, "tactics", () => null, 3).recommended, claims: consensus?.claims ?? 0, days: widenedFrom ? 365 : days };
+}
+async function teamPlan(db, userId, opts, team2, env, fetchFn, beforeAi, statPicker) {
+  const { consensus, widenedFrom } = await readConsensus(db, userId, opts.days);
+  const topics = consensus?.topics ?? [];
+  const pickStats = statPicker ?? defaultStatPicker(db, userId, opts.platform);
+  const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
+  const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team2.squad?.id ?? null, team2.squad?.formation ?? null, team2.club.length, consensus?.claims ?? 0, useAi, opts.playstyle ?? null, !!opts.pickFormation]);
+  const hit = cache2.get(cacheKey);
+  if (hit && !opts.refresh && !opts.pickFormation && Date.now() - hit.at < CACHE_MS) return hit.plan;
+  const citations = [];
+  const bySource = /* @__PURE__ */ new Map();
+  const citeSource = (s) => {
+    let n2 = bySource.get(s.id);
+    if (!n2) {
+      n2 = citations.length + 1;
+      bySource.set(s.id, n2);
+      citations.push({ n: n2, kind: s.kind, url: s.url, title: s.title, community: s.community });
+    }
+    return n2;
+  };
+  const cite = (t) => {
+    const lead = t.statements.find((s) => Math.sign(s.stance) === Math.sign(t.net ?? 0)) ?? t.statements[0];
+    return lead ? citeSource(lead.source) : null;
+  };
+  const ranked = rankFormations(topics, cite);
+  const backed = ranked.find((f2) => (f2.net ?? 0) > 0) ?? null;
+  const recommended = backed ?? ranked[0] ?? null;
+  const chosen = opts.pickFormation ? await opts.pickFormation(ranked) : null;
+  const basis = chosen && FORMATIONS[chosen.formation] ? "playstyle" : backed ? "community" : recommended ? "least_criticised" : team2.squad && FORMATIONS[team2.squad.formation] ? "your_squad" : "default";
+  const planFormation = basis === "playstyle" ? chosen.formation : recommended?.formation ?? (basis === "your_squad" ? team2.squad.formation : DEFAULT_FORMATION);
+  const confidence = !backed ? "low" : backed.claims >= 8 && (backed.agreement === "agreed" || backed.agreement === "leaning") ? "high" : backed.claims >= 3 ? "medium" : "low";
+  const yours = team2.squad ? ranked.find((f2) => f2.formation === team2.squad.formation) ?? null : null;
+  const tactics = sides(topics, "tactics", cite);
+  const playstyles = sides(topics, "playstyles", cite, 6);
+  const playerTopics = topics.filter((t) => t.category === "players").slice(0, 60);
+  const lookups = playerTopics.map((t) => ({ t, q: playerLookup(t.topic) })).filter((x) => !!x.q);
+  const cards = lookups.length ? await rpcData2(db, "kb_player_cards", { p_user: userId, p_names: lookups.map(({ t, q }) => ({ key: t.key, name: q.name, last: q.last })), p_platform: opts.platform }) ?? {} : {};
+  const players = lookups.map(({ t }) => {
+    let list = cards[t.key] ?? [];
+    if (new Set(list.map((c4) => fold(c4.player_name))).size > 1) {
+      const q = playerLookup(t.topic).name;
+      list = list.filter((c4) => fold(c4.player_name) === q);
+    }
+    const ownedClub = team2.club.find((c4) => mentions2(t.topic, c4.name) || list[0] && fold(c4.name) === fold(list[0].player_name));
+    const card = list.find((c4) => c4.owned) ?? list[0] ?? null;
+    const net2 = t.net ?? 0;
+    return {
+      ...pickOf(t, cite),
+      verdict: net2 > 0.15 ? "rated" : net2 < -0.15 ? "overrated" : "mixed",
+      position: card?.position ?? ownedClub?.positions[0] ?? null,
+      card,
+      versions: list.filter((c4) => c4 !== card),
+      owned: !!card?.owned || !!ownedClub,
+      owned_card: ownedClub ? { name: ownedClub.name, rating: ownedClub.rating, version: ownedClub.version } : null
+    };
+  });
+  const shape = formationPositions(planFormation);
+  const statPicks = /* @__PURE__ */ new Map();
+  await Promise.all([...shape.keys()].map(async (pos) => {
+    try {
+      const talked = new Set(players.filter((p) => p.position === pos && p.card).map((p) => fold(p.card.player_name)));
+      const all = (await pickStats(pos, team2.coins && team2.coins > 0 ? Math.floor(team2.coins) : null)).filter((c4) => !talked.has(fold(c4.name)));
+      const seen = /* @__PURE__ */ new Set();
+      const uniq = all.filter((c4) => {
+        const k = fold(c4.name);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      statPicks.set(pos, [...uniq.filter((c4) => c4.owned).slice(0, 2), ...uniq.filter((c4) => !c4.owned).slice(0, 4)].slice(0, 5));
+    } catch (e) {
+      console.error(`[fut-api] knowledge team stat picks ${pos}:`, e.message);
+    }
+  }));
+  let pricesAt = null;
+  const ids = [...new Set([...players.flatMap((p) => [p.card, ...p.versions]).map((c4) => c4?.ea_item_id), ...[...statPicks.values()].flat().map((c4) => c4.ea_item_id)].filter((x) => !!x))].slice(0, 2e3);
+  if (ids.length) {
+    try {
+      const d = await rpcData2(db, "card_price_trend", { p_platform: opts.platform, p_ids: ids });
+      pricesAt = d?.published_at ?? null;
+      const trends = new Map((d?.items ?? []).map((r2) => [Number(r2.ea_item_id), r2]));
+      const dress = (c4) => {
+        if (!c4) return;
+        c4.outlook = c4.ea_item_id ? priceOutlook(trends.get(c4.ea_item_id), c4.owned) : null;
+        c4.affordable = c4.owned || c4.price == null || team2.coins == null ? null : c4.price <= team2.coins;
+      };
+      for (const p of players) {
+        dress(p.card);
+        p.versions.forEach(dress);
+      }
+      for (const c4 of [...statPicks.values()].flat()) c4.outlook = c4.ea_item_id ? priceOutlook(trends.get(c4.ea_item_id), c4.owned) : null;
+    } catch (e) {
+      console.error("[fut-api] knowledge team price trends:", e.message);
+    }
+  }
+  const plan = {
+    days: consensus?.days ?? opts.days,
+    claims: consensus?.claims ?? 0,
+    sources: consensus?.sources ?? 0,
+    generated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    via: "data",
+    widened_from: widenedFrom,
+    confidence,
+    prices_at: pricesAt,
+    team: { squad: team2.squad ? { id: team2.squad.id, name: team2.squad.name, formation: team2.squad.formation } : null, squads: team2.squads, club_size: team2.club.length, coins: team2.coins },
+    formation: { recommended, ranked: ranked.slice(0, 8), yours, positions: [], name: planFormation, basis },
+    tactics,
+    playstyles,
+    positions: [],
+    summary: null,
+    formation_why: null,
+    settings: [],
+    instructions: [],
+    for_your_team: [],
+    citations
+  };
+  if (useAi) {
+    beforeAi?.();
+    const notes = topics.flatMap((t) => t.statements.slice(0, t.category === "players" ? 2 : 4).map((s) => `[${citeSource(s.source)}] ${t.topic} (${t.category}; ${s.stance === 1 ? "for" : s.stance === -1 ? "against" : "mixed"}): ${s.statement}`)).join("\n");
+    const raw = await claudeJson(
+      env,
+      fetchFn,
+      [
+        "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
+        `The formation is decided already: ${planFormation} (${basis === "playstyle" ? `picked for how the player likes to play, the community view and their club: ${chosen.why}` : basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f2) => `${f2.formation} ${f2.score}`).join(", ") || "none"}.`,
+        ...opts.playstyle ? [`The player describes how they like to play: "${squash(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : [],
+        "Use ALL the data you are given every time: the claims, the team's cards, the price moves and the stat picks. Never say there is not enough data and never tell the player to wait for more. Where the claims are thin or silent, reason it through from what you do have (the formation's shape, the team's players and their PlayStyles, the stat picks, how prices are moving) and set inferred: true on that row, with the reasoning in why. Rows taken from claims have inferred: false and cite them.",
+        "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
+        "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",
+        "settings: 5 to 8 custom tactics settings for this formation (e.g. Defensive approach: Balanced; Line height: 60; Build-up style: Counter; Width; Players in box; Corners and free kicks), each with a short why. Take the values people state where they state them; fill the rest by inference so the list is a complete set the player can enter.",
+        "instructions: one for every outfield position of the formation (e.g. CDM: Stay back while attacking; ST: Get in behind), from the claims where they exist and inferred from the shape and the team's players otherwise.",
+        "for_your_team: 3 to 5 short points for this team: which of their own players fit each role, the biggest gap, and who to buy or sell and when, using the price moves (buy what is near its low or steady, wait on what is falling, sell what they don't use near its high) and their coins. Name players and prices.",
+        "player_positions: for each player topic listed below that you can place, the FC 27 position people use them in (GK, LB, CB, RB, CDM, CM, LM, RM, CAM, LW, RW, ST).",
+        "Claims are opinions, and inferences are yours: keep them apart with the inferred flag. Never invent prices, stats or players that aren't in the data below."
+      ].join("\n"),
+      `Team:
+${describeTeam(team2)}
+
+Player topics: ${playerTopics.map((t) => t.topic).join("; ") || "none"}
+
+Players people talk about, with prices:
+${players.filter((p) => p.card).slice(0, 40).map((p) => `- ${p.card.player_name} ${p.card.overall} ${p.card.version ?? ""} (${p.position ?? "?"}; ${p.verdict}; ${p.card.price != null ? `${p.card.price.toLocaleString("en")} coins` : "no price"}${p.owned ? "; owned" : ""})${p.card.outlook ? ` ${p.card.outlook.call}` : ""}`).join("\n") || "none"}
+
+Best cards by in-game stats for each position${team2.coins ? ` within ${team2.coins.toLocaleString("en")} coins` : ""}:
+${[...statPicks].map(([pos, list]) => `${pos}: ${list.map((c4) => `${c4.name} ${c4.rating} (${c4.role} ${c4.score}${c4.price != null ? `, ${c4.price.toLocaleString("en")}` : ""}${c4.owned ? ", owned" : ""}${c4.outlook ? `, ${c4.outlook.signal.replace("_", " ")}` : ""})`).join("; ")}`).join("\n") || "none"}
+
+Claims:
+${notes || "none in the bank yet"}`,
+      PLAN_SCHEMA,
+      7e3
+    );
+    if (raw) {
+      const valid = (cites) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n2) => Number.isInteger(n2) && n2 >= 1 && n2 <= citations.length))].slice(0, 6) : [];
+      const rows = (v) => Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : [];
+      plan.summary = squash(raw.summary, 800) || null;
+      plan.formation_why = squash(raw.formation_why, 500) || null;
+      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash(r2.setting, 60), value: squash(r2.value, 80), why: squash(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.setting && r2.value).slice(0, 8);
+      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash(r2.position, 12).toUpperCase(), instruction: squash(r2.instruction, 80), why: squash(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.position && r2.instruction).slice(0, 11);
+      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash(x, 300)).filter(Boolean).slice(0, 5) : [];
+      const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash(r2.topic, 80)), squash(r2.position, 4).toUpperCase()]));
+      for (const p of players) if (!p.position) {
+        const pos = placed.get(fold(p.topic));
+        if (pos && POSITION_ORDER.includes(pos)) p.position = pos;
+      }
+      plan.via = "ai";
+    }
+  }
+  plan.formation.positions = [...shape.keys()];
+  const xi = new Set((team2.squad?.xi ?? []).map((x) => x.name ? fold(x.name) : "").filter(Boolean));
+  const groups = /* @__PURE__ */ new Map();
+  const group = (pos) => {
+    let g = groups.get(pos);
+    if (!g) {
+      g = { position: pos, in_formation: shape.get(pos) ?? 0, community: [], by_stats: statPicks.get(pos) ?? [], yours: [] };
+      groups.set(pos, g);
+    }
+    return g;
+  };
+  for (const pos of shape.keys()) group(pos);
+  for (const p of players) group(p.position ?? "Other").community.push(p);
+  for (const g of groups.values()) {
+    g.community.sort((a, b) => (a.verdict === "overrated" ? 1 : 0) - (b.verdict === "overrated" ? 1 : 0) || b.buzz * (b.net ?? 0) - a.buzz * (a.net ?? 0));
+    if (g.position === "Other") continue;
+    g.yours = team2.club.filter((c4) => c4.positions.includes(g.position)).slice(0, 3).map((c4) => ({ name: c4.name, rating: c4.rating, version: c4.version, in_squad: xi.has(fold(c4.name)) }));
+  }
+  plan.positions = [...groups.values()].filter((g) => g.in_formation || g.community.length).sort((a, b) => (b.in_formation ? 1 : 0) - (a.in_formation ? 1 : 0) || posRank(a.position) - posRank(b.position));
+  const used = /* @__PURE__ */ new Set([
+    ...[recommended, ...plan.formation.ranked, ...tactics.recommended, ...tactics.avoid, ...playstyles.recommended, ...playstyles.avoid, ...players].map((p) => p?.cite ?? 0),
+    ...plan.settings.flatMap((s) => s.cites),
+    ...plan.instructions.flatMap((s) => s.cites)
+  ]);
+  plan.citations = citations.filter((c4) => used.has(c4.n));
+  cache2.set(cacheKey, { at: Date.now(), plan });
+  if (cache2.size > 500) cache2.clear();
+  return plan;
+}
+
+// supabase/functions/_shared/fut/ideal-squad.ts
+var MAX_PLAYSTYLE = 600;
+var DEFAULT_MODEL2 = "claude-opus-5-5";
+var shapeOf = (formation) => {
+  const out = {};
+  for (const s of FORMATIONS[formation] ?? []) out[s.position] = (out[s.position] ?? 0) + 1;
+  return out;
+};
+var n = (s, ...ps) => ps.reduce((a, p) => a + (s[p] ?? 0), 0);
+var SHAPE_TRAITS = {
+  two_strikers: { label: "two strikers", words: /\b(two|2|pair of|both) (strikers?|sts?|up ?top|forwards?)\b|\bstrike partner|\bstriker partnership|\b2 up top/, fits: (s) => n(s, "ST") >= 2 },
+  lone_striker: { label: "one striker", words: /\b(lone|one|single|1) (striker|st|up ?top)\b|\btarget man\b/, fits: (s) => n(s, "ST") === 1 },
+  wingers: { label: "wingers", words: /\bwingers?\b|\bwing play\b|\bdown the wings?\b|\bcut(ting)? inside\b|\b(lw|rw)\b|\bwide forwards?\b/, fits: (s) => n(s, "LW", "RW") >= 2 },
+  wide_mids: { label: "wide midfielders", words: /\bwide mid(fielder)?s?\b|\b(lm|rm)\b|\bcross(es|ing)?\b|\bwidth\b|\bstretch\b|\bout wide\b/, fits: (s) => n(s, "LM", "RM", "LW", "RW") >= 2 },
+  narrow: { label: "narrow, through the middle", words: /\bnarrow\b|\bthrough the middle\b|\bcentral(ly)?\b|\bno wingers\b|\btiki[- ]?taka\b/, fits: (s) => n(s, "LM", "RM", "LW", "RW") === 0 },
+  cam: { label: "a number 10", words: /\bcams?\b|\bnumber 10\b|\bno\.? ?10\b|\bplaymaker\b|\bbehind the striker/, fits: (s) => n(s, "CAM") >= 1 },
+  two_cdms: { label: "two holding midfielders", words: /\b(two|2|double) (cdms?|holding|pivots?|defensive mid\w*)\b|\bdouble pivot\b/, fits: (s) => n(s, "CDM") >= 2 },
+  possession: { label: "possession", words: /\bpossession\b|\bkeep the ball\b|\bpatient\b|\bbuild[- ]?up\b|\bpass(ing)? (game|it around)\b|\bshort pass\w*\b|\bcontrol (the )?(game|midfield)\b/, fits: (s) => n(s, "CM", "CDM", "CAM") >= 3 && n(s, "CM", "CAM") >= 2 },
+  counter: { label: "counter attacks", words: /\bcounter\w*\b|\bon the break\b|\bfast break\b|\bdirect\b|\bthrough balls?\b|\bin behind\b|\bpace\b|\bfast\b|\bquick\b/, fits: (s) => n(s, "CDM") >= 1 && n(s, "LW", "RW", "LM", "RM") >= 2 },
+  attacking: { label: "all-out attack", words: /\battack(ing)?\b|\baggressive\b|\boverload\b|\bscore (a lot|lots|goals)\b|\bgoals\b|\bhigh press\b|\bpress(ing)? high\b/, fits: (s) => n(s, "ST", "LW", "RW", "CAM") >= 4 },
+  defensive: { label: "solid at the back", words: /\bdefen[cs]ive\b|\bsolid\b|\bcompact\b|\bpark the bus\b|\bsit (back|deep)\b|\bdon'?t concede\b|\bclean sheets?\b|\bprotect\b|\bsafe\b/, fits: (s) => n(s, "CDM") >= 2 || n(s, "CB") >= 3 },
+  back_five: { label: "three centre-backs", words: /\b(5|five|three|3) at the back\b|\bback (5|five|3|three)\b|\bwing[- ]?backs?\b|\b3 cbs?\b|\bthree (centre|center)[- ]?backs?\b/, fits: (s) => n(s, "CB") >= 3 },
+  midfield_three: { label: "three central midfielders", words: /\b(three|3)[- ](man )?midfield\b|\bmidfield (three|3)\b|\b(three|3) (cms?|central mid\w*)\b|\bbox[- ]to[- ]box\b/, fits: (s) => n(s, "CM") >= 3 || n(s, "CM") >= 2 && n(s, "CDM") >= 1 }
+};
+var SOFT = /* @__PURE__ */ new Set(["possession", "counter", "attacking", "defensive"]);
+var PLAYER_TRAITS = {
+  pace: { label: "pace", words: /\bpace\b|\bpacey\b|\bfast\b|\bquick\b|\bspeed\b|\brapid\b|\bin behind\b|\bcounter\w*\b/, stat: "pac" },
+  passing: { label: "passing", words: /\bpass(ing|es)?\b|\bpossession\b|\btiki[- ]?taka\b|\bbuild[- ]?up\b|\bthrough balls?\b|\bplaymak\w*\b/, stat: "pas" },
+  dribbling: { label: "dribbling", words: /\bdribbl\w*\b|\bskill(s| moves)?\b|\bskillers?\b|\b1v1\b|\btake (players|defenders|people) on\b|\bleft stick\b|\bagile\b/, stat: "dri" },
+  shooting: { label: "shooting", words: /\bshoot\w*\b|\bfinesse\b|\blong shots?\b|\bfinish\w*\b|\bclinical\b|\bpower shots?\b/, stat: "sho" },
+  defending: { label: "defending", words: /\bdefen[cs]ive\b|\btackl\w*\b|\bintercept\w*\b|\bsolid\b|\bcompact\b|\bclean sheets?\b/, stat: "def" },
+  physical: { label: "strength", words: /\bphysical\b|\bstrong\b|\bstrength\b|\bbully\b|\bheaders?\b|\baerial\b|\btarget man\b|\bcross(es|ing)?\b/, stat: "phy" }
+};
+var strikersOf = (s) => n(s, "ST") >= 2 ? 2 : n(s, "LW", "RW") >= 2 ? 3 : 1;
+var defendersOf = (s) => n(s, "CB", "LB", "RB");
+var meets2 = (formation, must) => {
+  const s = shapeOf(formation);
+  return (!must.strikers || strikersOf(s) === must.strikers) && (!must.defenders || defendersOf(s) === must.defenders);
+};
+var mustLabel = (must) => [
+  must.strikers === 1 ? "one striker" : must.strikers === 2 ? "two strikers" : must.strikers === 3 ? "a front three" : null,
+  must.defenders ? `${["three", "four", "five"][must.defenders - 3]} at the back` : null
+].filter((x) => !!x);
+function withPills(style, traits, must) {
+  const shape = [.../* @__PURE__ */ new Set([...style.shape, ...traits.filter((k) => k in SHAPE_TRAITS)])];
+  const players = [.../* @__PURE__ */ new Set([...style.players, ...traits.filter((k) => k in PLAYER_TRAITS)])];
+  const picked = [...mustLabel(must), ...traits.filter((k) => k in SHAPE_TRAITS && !style.shape.includes(k)).map((k) => SHAPE_TRAITS[k].label), ...traits.filter((k) => k in PLAYER_TRAITS && !style.players.includes(k)).map((k) => PLAYER_TRAITS[k].label)];
+  const summary = [style.summary, picked.length ? `You picked ${picked.join(", ")}.` : ""].filter(Boolean).join(" ");
+  return { ...style, shape, players, summary };
+}
+function readPlaystyleWords(text2) {
+  const t = ` ${text2.toLowerCase()} `;
+  const named2 = formationName(text2);
+  const shape = Object.entries(SHAPE_TRAITS).filter(([, v]) => v.words.test(t)).map(([k]) => k);
+  const players = Object.entries(PLAYER_TRAITS).filter(([, v]) => v.words.test(t)).map(([k]) => k);
+  const labels = [...shape.map((k) => SHAPE_TRAITS[k].label), ...players.map((k) => PLAYER_TRAITS[k].label)];
+  return { text: text2, shape, players, via: "words", summary: labels.length ? `You like ${[...new Set(labels)].join(", ")}${named2 ? `, and you named ${named2}` : ""}.` : named2 ? `You named ${named2}.` : "" };
+}
+var STYLE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["shape", "players", "summary"],
+  properties: {
+    shape: { type: "array", items: { type: "string", enum: Object.keys(SHAPE_TRAITS) } },
+    players: { type: "array", items: { type: "string", enum: Object.keys(PLAYER_TRAITS) } },
+    summary: { type: "string" }
+  }
+};
+async function readPlaystyle(text2, env, fetchFn) {
+  const words = readPlaystyleWords(text2);
+  if (!text2.trim() || !(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return words;
+  try {
+    const res = await callClaude(env, fetchFn, {
+      model: env("FUT_KB_MODEL") || DEFAULT_MODEL2,
+      max_tokens: 1200,
+      output_config: { effort: "low", format: { type: "json_schema", schema: STYLE_SCHEMA } },
+      system: [
+        "An EA SPORTS FC 27 Ultimate Team player describes how they like to play. Turn it into traits. Return JSON only.",
+        `shape: what their style asks of a formation. ${Object.entries(SHAPE_TRAITS).map(([k, v]) => `${k} = ${v.label}`).join("; ")}. Pick every one their words imply (a player who loves crossing wants wide players and usually two strikers; one who sits deep and breaks wants counter and often defensive), but none they contradict.`,
+        `players: what it asks of the players. ${Object.entries(PLAYER_TRAITS).map(([k, v]) => `${k} = ${v.label}`).join("; ")}.`,
+        'summary: one plain sentence, addressed to them as "you", saying how you read their style (under 30 words).'
+      ].join("\n"),
+      messages: [{ role: "user", content: text2.slice(0, MAX_PLAYSTYLE) }]
+    });
+    const out = await res.json().catch(() => null);
+    if (!res.ok || out?.stop_reason === "refusal") return words;
+    const o = JSON.parse((out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join(""));
+    const list = (v, known) => Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string" && x in known))] : [];
+    const shape = list(o.shape, SHAPE_TRAITS), players = list(o.players, PLAYER_TRAITS);
+    if (!shape.length && !players.length) return words;
+    return { text: text2, shape, players, via: "ai", summary: typeof o.summary === "string" ? o.summary.replace(/\s+/g, " ").trim().slice(0, 300) : words.summary };
+  } catch (e) {
+    console.error("[fut-api] ideal squad playstyle:", e.message);
+    return words;
+  }
+}
+function styleFit(formation, style) {
+  if (!style.shape.length) return null;
+  const s = shapeOf(formation);
+  const matched = style.shape.filter((k) => SHAPE_TRAITS[k].fits(s)), missed = style.shape.filter((k) => !SHAPE_TRAITS[k].fits(s));
+  const w = (k) => SOFT.has(k) ? 1 : 2;
+  const sum = (ks) => ks.reduce((a, k) => a + w(k), 0);
+  return { fit: Math.round(sum(matched) / sum(style.shape) * 100) / 100, matched: matched.map((k) => SHAPE_TRAITS[k].label), missed: missed.map((k) => SHAPE_TRAITS[k].label) };
+}
+function liftPool(pool, style, rated) {
+  return pool.map((c4) => {
+    let lift = rated.get(fold(c4.name)) ?? 0;
+    for (const k of style.players) {
+      const v = c4.stats?.[PLAYER_TRAITS[k].stat];
+      if (typeof v === "number") lift += Math.max(-1.5, Math.min(1.5, (v - 80) / 6));
+    }
+    return lift ? { ...c4, rating: (c4.rating ?? 0) + Math.max(-3, Math.min(4, lift)) } : c4;
+  });
+}
+function scoreFormations(base, pool, rules, ranked, style, current, must = {}) {
+  const named2 = formationName(style.text);
+  const fits = Object.keys(FORMATIONS).map((f2) => ({ f: f2, fit: styleFit(f2, style)?.fit ?? 0 })).sort((a, b) => b.fit - a.fit);
+  const open = [.../* @__PURE__ */ new Set([
+    ...ranked.map((r2) => r2.formation),
+    ...style.shape.length ? fits.filter((x) => x.fit >= (fits[0]?.fit ?? 0) - 0.01).slice(0, 6).map((x) => x.f) : [],
+    ...named2 ? [named2] : [],
+    ...current && FORMATIONS[current] ? [current] : [],
+    "4-2-3-1"
+  ])].filter((f2) => FORMATIONS[f2]);
+  const has = mustLabel(must);
+  const allowed2 = has.length ? fits.map((x) => x.f).filter((f2) => meets2(f2, must)) : [];
+  const candidates = (allowed2.length ? allowed2 : open).slice(0, 14);
+  const maxScore = Math.max(0, ...ranked.map((r2) => r2.score));
+  const minScore = Math.min(0, ...ranked.map((r2) => r2.score));
+  const squads = /* @__PURE__ */ new Map();
+  const built = pool.length ? candidates.map((f2) => {
+    const b = bestSquadFor(base, f2, pool, rules, "ovr");
+    squads.set(f2, b);
+    return b;
+  }) : [];
+  const ratings = built.filter((b) => b.filled).map((b) => b.rating * b.filled / 11);
+  const hi = Math.max(...ratings, 0), lo = Math.min(...ratings, hi);
+  const mine = current && FORMATIONS[current] ? shapeOf(current) : null;
+  const near2 = (f2) => mine ? Object.entries(shapeOf(f2)).reduce((a, [p, c4]) => a + Math.min(c4, mine[p] ?? 0), 0) : 0;
+  const options = candidates.map((f2) => {
+    const r2 = ranked.find((x) => x.formation === f2) ?? null;
+    const community = r2 ? { score: r2.score, net: r2.net, claims: r2.claims, topic_key: r2.key } : null;
+    const c4 = !r2 ? 0 : r2.score >= 0 ? maxScore ? r2.score / maxScore : 0 : minScore ? -r2.score / minScore : 0;
+    const style_ = styleFit(f2, style);
+    const b = squads.get(f2) ?? null;
+    const club = b ? { rating: b.rating, chemistry: b.chemistry, filled: b.filled, empty: b.empty } : null;
+    const clubFit = b && b.filled ? hi > lo ? (b.rating * b.filled / 11 - lo) / (hi - lo) : 1 : 0;
+    const w = { community: ranked.length ? 30 : 0, style: style_ ? 50 : 0, club: club ? 20 : 0 };
+    const total = w.community + w.style + w.club || 1;
+    let score2 = (w.community * ((c4 + 1) / 2) + w.style * (style_?.fit ?? 0) + w.club * clubFit) / total * 100;
+    if (named2 === f2) score2 += 15;
+    const why = [
+      named2 === f2 ? "you named it" : null,
+      allowed2.length ? `it has ${has.join(" and ")}` : null,
+      community ? community.score > 0 ? `the community backs it (${community.claims} claim${community.claims === 1 ? "" : "s"})` : community.score < 0 ? "the community is cool on it" : "the community is split on it" : ranked.length ? "nobody in the bank is talking about it" : null,
+      style_ ? style_.matched.length ? `it gives you ${style_.matched.join(", ")}${style_.missed.length ? ` but not ${style_.missed.join(", ")}` : ""}` : `it doesn't give you ${style_.missed.join(", ")}` : null,
+      club ? club.empty.length ? `your club leaves ${club.empty.length} slot${club.empty.length === 1 ? "" : "s"} empty in it` : `your club makes an ${club.rating}-rated XI in it` : null
+    ].filter(Boolean).join("; ");
+    return { formation: f2, score: Math.round(Math.min(100, score2)), community, style: style_, club, why: why ? why[0].toUpperCase() + why.slice(1) + "." : "" };
+  }).sort((a, b) => b.score - a.score || (b.community?.score ?? 0) - (a.community?.score ?? 0) || (b.club?.chemistry ?? 0) - (a.club?.chemistry ?? 0) || near2(b.formation) - near2(a.formation) || a.formation.localeCompare(b.formation));
+  return { options, squads };
+}
+async function idealSquad(db, userId, base, pool, rules, input, team2, env, fetchFn, beforeAi, statPicker) {
+  const text2 = input.playstyle.replace(/\s+/g, " ").trim().slice(0, MAX_PLAYSTYLE);
+  if (env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) beforeAi?.();
+  const must = { strikers: input.strikers ?? null, defenders: input.defenders ?? null };
+  const style = withPills(await readPlaystyle(text2, env, fetchFn), input.traits ?? [], must);
+  const brief = [style.summary.includes("You picked") ? style.summary.slice(style.summary.indexOf("You picked")) : "", text2].filter(Boolean).join(" ");
+  let options = [], squads = /* @__PURE__ */ new Map();
+  const plan = await teamPlan(db, userId, {
+    days: input.days,
+    platform: input.platform,
+    refresh: true,
+    playstyle: brief || null,
+    pickFormation: (ranked) => {
+      ({ options, squads } = scoreFormations(base, pool, rules, ranked, style, team2.squad?.formation ?? base.formation, must));
+      const pick = (input.formation && FORMATIONS[input.formation] ? options.find((o) => o.formation === input.formation) ?? { formation: input.formation, why: "You picked it." } : null) ?? options[0];
+      return Promise.resolve(pick ? { formation: pick.formation, why: pick.why } : null);
+    }
+  }, team2, env, fetchFn, void 0, statPicker);
+  const formation = plan.formation.name;
+  const rated = /* @__PURE__ */ new Map();
+  for (const g of plan.positions) for (const p of g.community) {
+    const name2 = p.card?.player_name ?? p.owned_card?.name;
+    if (name2 && p.owned) rated.set(fold(name2), p.verdict === "rated" ? 2 : p.verdict === "overrated" ? -1.5 : 0);
+  }
+  const byId = new Map(pool.map((c4) => [c4.id, c4]));
+  const best = pool.length ? bestSquadFor(base, formation, liftPool(pool, style, rated), rules, "ovr") : squads.get(formation) ?? null;
+  const slots = (best?.squad.slots ?? (FORMATIONS[formation] ?? []).map((l) => ({ slot: l.slot, position: l.position, card: null, locked: false }))).map((s) => ({ ...s, card: s.card ? byId.get(s.card.id) ?? s.card : null }));
+  const filled = slots.filter((s) => s.card);
+  const notes = {};
+  for (const s of filled) {
+    const c4 = s.card, lift = rated.get(fold(c4.name)) ?? 0;
+    const suits = style.players.filter((k) => (c4.stats?.[PLAYER_TRAITS[k].stat] ?? 0) >= 85).map((k) => `${c4.stats[PLAYER_TRAITS[k].stat]} ${PLAYER_TRAITS[k].label}`);
+    const bits = [lift > 0 ? "the community rates him" : lift < 0 ? "people call him overrated, but he's your best here" : null, suits.length ? `suits your style (${suits.join(", ")})` : null].filter(Boolean);
+    if (bits.length) notes[s.slot] = bits.join("; ");
+  }
+  const shown = options.slice(0, 6);
+  const backed = options.filter((o) => (o.community?.score ?? 0) > 0).sort((x, y) => y.community.score - x.community.score)[0];
+  for (const must2 of [options.find((o) => o.formation === formation), backed]) {
+    if (must2 && !shown.includes(must2)) shown.splice(shown.findLastIndex((o) => o.formation !== formation && o !== backed), 1, must2);
+  }
+  return {
+    playstyle: style,
+    formation,
+    options: shown.sort((x, y) => options.indexOf(x) - options.indexOf(y)),
+    squad: { ...base, formation, slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() },
+    chemistry: best?.chemistry ?? 0,
+    rating: filled.length ? Math.round(filled.reduce((a, s) => a + (s.card.rating ?? 0), 0) / filled.length) : 0,
+    empty: slots.filter((s) => !s.card).map((s) => s.slot),
+    notes,
+    plan
+  };
+}
+var USUAL = ["4-2-3-1", "4-4-2", "4-3-3 (2)"];
+async function topMetas(db, userId, days) {
+  const c4 = await communityFormations(db, userId, days);
+  const metas = c4.ranked.filter((f2) => f2.score > 0 && FORMATIONS[f2.formation]).slice(0, 3).map((f2) => ({ formation: f2.formation, basis: "community", claims: f2.claims, net: f2.net, said: f2.said, topic_key: f2.key }));
+  for (const f2 of USUAL) {
+    if (metas.length >= 3) break;
+    if (!metas.some((m) => m.formation === f2) && !c4.ranked.some((r2) => r2.formation === f2 && r2.score < 0)) metas.push({ formation: f2, basis: "usual", claims: 0, net: null, said: null, topic_key: null });
+  }
+  return { metas, tactics: c4.tactics.map((t) => ({ topic: t.topic, claims: t.claims, said: t.said })), claims: c4.claims, days: c4.days };
+}
+
+// supabase/functions/_shared/fut/ai-keys.ts
+var unb642 = (text2) => Uint8Array.from(atob(text2), (c4) => c4.charCodeAt(0));
+async function sealKey2(env) {
+  const secret = env("AI_KEY_SECRET") || env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!secret) return null;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gafferbot-ai-key:${secret}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function decrypt(env, userId, sealed) {
+  if (!sealed?.startsWith("v1:")) return null;
+  const k = await sealKey2(env);
+  if (!k) return null;
+  try {
+    const raw = unb642(sealed.slice(3));
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: new TextEncoder().encode(userId) }, k, raw.slice(12));
+    return new TextDecoder().decode(plain);
+  } catch {
+    return null;
+  }
+}
+var fail8 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+async function row2(db, userId) {
+  const { data, error } = await db.from("user_ai_keys").select("key_encrypted, key_hint, updated_at").eq("user_id", userId).maybeSingle();
+  fail8(error);
+  return data;
+}
+async function userAiKey(db, userId, env) {
+  const r2 = await row2(db, userId);
+  return r2 ? await decrypt(env, userId, r2.key_encrypted) : null;
+}
+async function envForUser(db, userId, env) {
+  let key = null;
+  try {
+    key = await userAiKey(db, userId, env);
+  } catch (e) {
+    console.error("[fut-api] user AI key:", e);
+  }
+  if (!key) return { env, own: false };
+  return { env: (k) => k === "ANTHROPIC_API_KEY" || k === "CLAUDE_API_KEY" ? key : env(k), own: true };
+}
+
 // supabase/functions/gafferbot-mcp/fut.ts
 var SIGN_IN = "XI Lab uses your GafferBot website account. Sign in once at https://gafferbot.app/fut with Discord, then ask again.";
 async function account(ctx) {
@@ -15891,7 +18812,7 @@ async function squadId(db, userId, v) {
   return id;
 }
 var SQUAD_ID = { type: "string", description: "A saved squad id (from get_my_fut_squad with list: true). Leave out for the squad edited last." };
-var RULES = "Numbers come from XI Lab's tested chemistry engine: never estimate chemistry yourself. Report the rule version and say plainly when the rules are unverified (community thresholds, not confirmed by EA).";
+var RULES2 = "Numbers come from XI Lab's tested chemistry engine: never estimate chemistry yourself. Report the rule version and say plainly when the rules are unverified (community thresholds, not confirmed by EA).";
 var READ_ONLY = "Read-only: nothing is saved and nothing touches the player's EA account or the transfer market.";
 var LABELS = "Every card carries an evidence label (game_data = copied from the game screen, estimate, hypothesis); say which numbers are the player's own entries.";
 var FUT_TOOLS = [
@@ -15944,7 +18865,7 @@ var FUT_TOOLS = [
   {
     name: "get_fut_card",
     title: "FUT card details (XI Lab)",
-    description: "EA FC Ultimate Team: one card's details by card id (from get_my_fut_inventory or a squad). " + LABELS,
+    description: "EA FC Ultimate Team: one card's details by card id (from get_my_fut_inventory, search_fut_players, search_fut_market_cards or a squad): face stats plus every in-game attribute FUT.GG lists (acceleration, sprint speed, agility, finishing, composure and so on), foot, height, AcceleRATE, alternative positions, PlayStyles and FC 27 roles (+ / ++). " + LABELS,
     inputSchema: {
       type: "object",
       properties: { card_id: { type: "string", description: "Card id." } },
@@ -15954,8 +18875,8 @@ var FUT_TOOLS = [
     run: (args, ctx) => run(async () => {
       const { db, userId } = await account(ctx);
       const card = await getCard(db, userId, String(args.card_id ?? ""));
-      if (!card) throw new ToolError("Card not found among the player's cards.");
-      return { card };
+      if (!card) throw new ToolError("Card not found among the player's cards or the market card list.");
+      return { card, ...await fullStats(db, card.id) };
     })
   },
   {
@@ -15976,7 +18897,7 @@ var FUT_TOOLS = [
   {
     name: "calculate_fut_chemistry",
     title: "FUT squad chemistry (XI Lab)",
-    description: "EA FC Ultimate Team: chemistry for a saved squad: team total out of 33, each player's 0-3 with the club/league/nation links behind it, plus tactical fit as a separate estimate (fit is not chemistry). " + RULES,
+    description: "EA FC Ultimate Team: chemistry for a saved squad: team total out of 33, each player's 0-3 with the club/league/nation links behind it, plus tactical fit as a separate estimate (fit is not chemistry). " + RULES2,
     inputSchema: { type: "object", properties: { squad_id: SQUAD_ID }, additionalProperties: false },
     run: (args, ctx) => run(async () => {
       const { db, userId } = await account(ctx);
@@ -15986,7 +18907,7 @@ var FUT_TOOLS = [
   {
     name: "diagnose_fut_chemistry",
     title: "FUT Chemistry Surgeon (XI Lab)",
-    description: "EA FC Ultimate Team: XI Lab's Chemistry Surgeon. For one slot: why that player has the chemistry they have, which links they count towards and what the next point needs. Leave slot out for every player below 3. " + RULES,
+    description: "EA FC Ultimate Team: XI Lab's Chemistry Surgeon. For one slot: why that player has the chemistry they have, which links they count towards and what the next point needs. Leave slot out for every player below 3. " + RULES2,
     inputSchema: {
       type: "object",
       properties: { squad_id: SQUAD_ID, slot: { type: "string", description: "Slot name from the squad, e.g. LCB or RST." } },
@@ -16000,7 +18921,7 @@ var FUT_TOOLS = [
   {
     name: "preview_fut_swap",
     title: "Preview a FUT swap (XI Lab)",
-    description: "EA FC Ultimate Team: what happens to all 11 players if one of the player's cards goes into a slot (card_id null empties it). Every starter is recalculated, so the diff shows who gains and who loses. " + READ_ONLY + " " + RULES,
+    description: "EA FC Ultimate Team: what happens to all 11 players if one of the player's cards goes into a slot (card_id null empties it). Every starter is recalculated, so the diff shows who gains and who loses. " + READ_ONLY + " " + RULES2,
     inputSchema: {
       type: "object",
       properties: {
@@ -16015,9 +18936,9 @@ var FUT_TOOLS = [
       const { db, userId } = await account(ctx);
       let card = null;
       if (args.card_id !== null) {
-        const c2 = await getCard(db, userId, String(args.card_id ?? ""));
-        if (!c2) throw new ToolError("Card not found among the player's cards.");
-        card = toWorkspaceCard(c2);
+        const c4 = await getCard(db, userId, String(args.card_id ?? ""));
+        if (!c4) throw new ToolError("Card not found among the player's cards.");
+        card = toWorkspaceCard(c4);
       }
       const slot = str5(args.slot);
       if (!slot) throw new ToolError("slot is required (e.g. LCB).");
@@ -16027,7 +18948,7 @@ var FUT_TOOLS = [
   {
     name: "optimize_fut_squad",
     title: "Find FUT chemistry fixes (XI Lab)",
-    description: "EA FC Ultimate Team: XI Lab's optimizer. Finds the cheapest 1-4 swaps (from the player's own cards and priced targets) that reach a goal: a slot's chemistry and/or a team total, within budget. Locked players never move; by default a fix that lowers team chemistry is rejected and listed as rejected. If nothing fits, blockers say which limit stops it. Prices are what the player entered, not live market prices. " + READ_ONLY + " " + RULES,
+    description: "EA FC Ultimate Team: XI Lab's optimizer. Finds the cheapest 1-4 swaps (from the player's own cards and priced targets) that reach a goal: a slot's chemistry and/or a team total, within budget. Locked players never move; by default a fix that lowers team chemistry is rejected and listed as rejected. If nothing fits, blockers say which limit stops it. Prices are what the player entered, not live market prices. " + READ_ONLY + " " + RULES2,
     inputSchema: {
       type: "object",
       properties: {
@@ -16061,7 +18982,7 @@ var FUT_TOOLS = [
   {
     name: "compare_fut_squads",
     title: "Compare FUT squads (XI Lab)",
-    description: "EA FC Ultimate Team: two saved squads side by side: chemistry and tactical-fit estimate per slot and in total, who differs, and plain trade-offs from those numbers. " + RULES,
+    description: "EA FC Ultimate Team: two saved squads side by side: chemistry and tactical-fit estimate per slot and in total, who differs, and plain trade-offs from those numbers. " + RULES2,
     inputSchema: {
       type: "object",
       properties: { squad_a: { type: "string", description: "Saved squad id." }, squad_b: { type: "string", description: "Saved squad id." } },
@@ -16276,12 +19197,12 @@ FUT_TOOLS.push(
   {
     name: "fut_sell_or_keep",
     title: "Sell or keep my club cards",
-    description: "EA FC Ultimate Team: a verdict for every tradeable card in the player's synced club, with the reason: keep (starts in a saved squad), keep_evo (a live evolution would make it start), hold_fodder (high-rated card at the cheapest price for its rating, better used in SBCs), sell_now (falling on FUT.GG), sell_high (near its two-week high), wait (still rising) or sell (steady, unused); plus coins after tax from selling. Prices are FUT.GG's. " + READ_ONLY,
+    description: "EA FC Ultimate Team: a verdict for every tradeable card in the player's synced club, with the reason: keep (starts in the squad they play in the EA Web App or a saved squad), keep_evo (a live evolution would make it start), hold_fodder (high-rated card at the cheapest price for its rating, better used in SBCs), sell_now (falling on FUT.GG), sell_high (near its two-week high), wait (still rising) or sell (steady, unused); plus coins after tax from selling. Prices are FUT.GG's. " + READ_ONLY,
     inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
     run: (args, ctx) => run(async () => {
       const { db, userId } = await account(ctx);
       const platform = platformParam(args.platform);
-      const r2 = await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }]))));
+      const r2 = await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }])), () => playingNow(db, userId)));
       return { ...r2, advice: r2.advice.slice(0, 60).map(({ trend: _t, ...a }) => a) };
     })
   },
@@ -16407,6 +19328,358 @@ FUT_TOOLS.push(
       const category = str5(args.category);
       if (category && !KB_CATEGORIES.includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
       return { map: await knowledgeMap(db, userId, days, category ?? null), note: KB_NOTE };
+    })
+  }
+);
+async function fullStats(db, cardId) {
+  const [a, r2] = await Promise.all([
+    db.from("card_attributes").select("*").eq("card_id", cardId).maybeSingle(),
+    db.from("card_roles").select("*").eq("card_id", cardId)
+  ]);
+  const row3 = a?.data ?? null;
+  const roles = (r2?.data ?? []).map((x) => ({ position: x.position_code, role: x.role, level: x.level }));
+  if (!row3) return { attributes: null, roles, attributes_note: "FUT.GG's full attributes haven't been read for this card yet (a few hundred cards are read per run)." };
+  const detail = row3.detail && typeof row3.detail === "object" ? row3.detail : {};
+  return {
+    attributes: { ...detail, foot: row3.foot ?? null, height_cm: row3.height_cm ?? null, accelerate_type: row3.accelerate_type ?? null, alt_positions: row3.alt_positions ?? [], total_igs: row3.total_igs ?? null, fetched_at: row3.fetched_at ?? null },
+    roles
+  };
+}
+var STAT_LIST = ALL_STATS.map((x) => x.key).join(", ");
+var STAT_BOUND = { type: "array", maxItems: 12, items: { type: "object", properties: { stat: { type: "string" }, value: { type: "integer", minimum: 1, maximum: 5e3 } }, required: ["stat", "value"], additionalProperties: false } };
+var FUTGG = "Cards and prices come from FUT.GG's public card list (lowest Buy Now estimates, refreshed twice a day plus hourly for some cards), not EA: say how old the prices are. " + READ_ONLY;
+var POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
+var clampInt2 = (v, min, max, dflt) => Math.min(max, Math.max(min, int3(v) ?? dflt));
+FUT_TOOLS.push(
+  {
+    name: "search_fut_players",
+    title: "Search every FUT card with full stats (Player Ratings)",
+    description: `EA FC Ultimate Team: GafferBot's Player Ratings search over the whole market card list (not just the player's club), with each card's full in-game attributes, PlayStyles, PlayStyles+, roles, foot, height, AcceleRATE, price and whether the player owns it. Search by name (text), positions, rating, price, card type, league/nation/club, stat minimums and maximums (e.g. sprint_speed 90+), PlayStyles; rank by a weighted fit of stats (weights 1-5) or sort by any stat, price or name. Turn requests like "fast CB under 50k with good passing" into weights and limits yourself. Stat keys: ` + STAT_LIST + ". " + FUTGG,
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", maxLength: 60, description: 'Name (or part of it), e.g. "Mbappe".' },
+        positions: { type: "array", items: { type: "string", enum: POSITIONS }, maxItems: 12 },
+        include_alt_positions: { type: "boolean", description: "Match alternative positions too (default true)." },
+        card_type: { type: "string", enum: ["icon", "hero", "promo", "base"] },
+        min_rating: { type: "integer", minimum: 1, maximum: 99 },
+        max_rating: { type: "integer", minimum: 1, maximum: 99 },
+        min_price: { type: "integer", minimum: 0 },
+        max_price: { type: "integer", minimum: 0 },
+        priced_only: { type: "boolean", description: "Leave out cards with no price (SBC, objective, untradeable)." },
+        minimums: { ...STAT_BOUND, description: 'Stat floors, e.g. [{stat: "pac", value: 90}].' },
+        maximums: { ...STAT_BOUND, description: 'Stat ceilings, e.g. [{stat: "height_cm", value: 180}].' },
+        foot: { type: "string", enum: ["left", "right"] },
+        playstyles: { type: "array", items: { type: "string" }, maxItems: 6, description: `Must have these PlayStyles (or PlayStyles+). Names: ${PLAYSTYLES2.join(", ")}.` },
+        playstyles_plus: { type: "array", items: { type: "string" }, maxItems: 4, description: "Must have these as PlayStyles+." },
+        accelerate_types: { type: "array", items: { type: "string", enum: [...ACCELERATE_TYPES] }, maxItems: 7 },
+        league: { type: "string" },
+        nation: { type: "string" },
+        club: { type: "string" },
+        owned_only: { type: "boolean", description: "Only cards in the player's synced club." },
+        weights: { type: "array", maxItems: 12, description: "Rank by fit: [{stat, weight 1-5}].", items: { type: "object", properties: { stat: { type: "string" }, weight: { type: "integer", minimum: 1, maximum: 5 } }, required: ["stat", "weight"], additionalProperties: false } },
+        sort: { type: "string", description: 'A stat key, "fit", "price" or "name". Default: fit with weights, else overall.' },
+        direction: { type: "string", enum: ["asc", "desc"] },
+        platform: PLATFORM,
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
+        offset: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const { platform, limit, offset, ...q } = args;
+      const r2 = await searchPlayers(db, userId, cleanPlayerQuery(q), { platform: platformParam(platform), limit: clampInt2(limit, 1, 50, 20), offset: clampInt2(offset, 0, 1e5, 0) });
+      return { ...r2, note: "Use a card's id with get_fut_card, compare_any_fut_cards, get_fut_price_history, fut_meta_rating or get_fut_card_market_intelligence." };
+    })
+  },
+  {
+    name: "search_fut_market_cards",
+    title: "FUT market card list with prices (Market cards)",
+    description: "EA FC Ultimate Team: the market-wide card list with each card's latest price and its 24-hour change, filtered by name, position, card type, rating and price, sorted by price, rating, biggest risers or fallers, or name. Use it to look up a card's price by name, compare prices of several cards, or see what's rising and falling. " + FUTGG,
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", maxLength: 60, description: "Name (or part of it)." },
+        position: { type: "string", enum: POSITIONS },
+        type: { type: "string", enum: ["icon", "hero", "promo", "base"] },
+        min_rating: { type: "integer", minimum: 1, maximum: 99 },
+        max_rating: { type: "integer", minimum: 1, maximum: 99 },
+        min_price: { type: "integer", minimum: 0, maximum: 15e6 },
+        max_price: { type: "integer", minimum: 0, maximum: 15e6 },
+        sort: { type: "string", enum: ["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"], description: "Default price_desc." },
+        platform: PLATFORM,
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
+        offset: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db } = await account(ctx);
+      const a = args;
+      const position = str5(a.position)?.toUpperCase() ?? null, type = str5(a.type) ?? null, sort = str5(a.sort) ?? "price_desc";
+      if (position && !POSITIONS.includes(position)) throw new ToolError("position must be a position code like ST or CB.");
+      if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new ToolError("type must be icon, hero, promo or base.");
+      if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new ToolError("Unknown sort.");
+      const opt2 = (v, min, max) => int3(v) === void 0 ? null : Math.min(max, Math.max(min, int3(v)));
+      const { data, error } = await db.rpc("futgg_market_cards", {
+        p_platform: platformParam(a.platform),
+        p_q: str5(a.query)?.slice(0, 60) ?? null,
+        p_position: position,
+        p_type: type,
+        p_min_rating: opt2(a.min_rating, 1, 99),
+        p_max_rating: opt2(a.max_rating, 1, 99),
+        p_min_price: opt2(a.min_price, 0, 15e6),
+        p_max_price: opt2(a.max_price, 0, 15e6),
+        p_sort: sort,
+        p_limit: clampInt2(a.limit, 1, 50, 20),
+        p_offset: clampInt2(a.offset, 0, 1e5, 0)
+      });
+      if (error) throw new FutError(`Market cards are unavailable: ${error.message}`, 500);
+      return data;
+    })
+  },
+  {
+    name: "get_fut_price_history",
+    title: "FUT card price history",
+    description: "EA FC Ultimate Team: one card's FUT.GG price over the last 1-90 days (default 14; twice daily plus hourly for tracked cards), with low, high, latest and changes, and market-wide drops marked. Card ids come from search_fut_players, search_fut_market_cards or the player's cards. " + FUTGG,
+    inputSchema: { type: "object", properties: { card_id: { type: "string" }, days: { type: "integer", minimum: 1, maximum: 90 }, platform: PLATFORM }, required: ["card_id"], additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const r2 = await cardPriceHistory(db, userId, platformParam(a.platform), String(a.card_id ?? ""), clampInt2(a.days, 1, 90, 14));
+      return { ...r2, points: r2.points.slice(-60), points_total: r2.points.length };
+    })
+  },
+  {
+    name: "compare_any_fut_cards",
+    title: "Compare any FUT cards with full stats",
+    description: "EA FC Ultimate Team: side by side for 2 to 4 of any cards (the player's or from the market list): every in-game attribute with an optional chem style applied to each, PlayStyles each has that the others don't, metaratings per position and the current FUT.GG price. Chem style boosts and metaratings are GafferBot's estimates. " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        card_ids: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 4 },
+        chem_styles: { type: "object", additionalProperties: { type: "string" }, description: "Optional: card id -> chem style name (e.g. Hunter, Shadow, Engine; GK: Wall, Shield, Cat, Glove)." },
+        platform: PLATFORM
+      },
+      required: ["card_ids"],
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await compareAnyCards(db, userId, args);
+    })
+  },
+  {
+    name: "get_my_fut_club_value",
+    title: "What my FUT club is worth",
+    description: "EA FC Ultimate Team: which cards in the player's synced club are tradeable and what the tradeable copies sell for now (latest FUT.GG price, or their own newer Web App capture), with totals before and after EA's 5% tax. Untradeable cards are counted, not valued. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, limit: { type: "integer", minimum: 1, maximum: 100, description: "Most valuable cards to list (default 30)." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const { data, error } = await db.rpc("club_trade_value", { p_user: userId, p_platform: platformParam(a.platform) });
+      if (error) throw new FutError(`Club value is unavailable: ${error.message}`, 500);
+      const d = data ?? {};
+      const n2 = clampInt2(a.limit, 1, 100, 30);
+      const out = {};
+      for (const [k, v] of Object.entries(d)) out[k] = Array.isArray(v) && v.length > n2 ? v.slice(0, n2) : v;
+      return out;
+    })
+  }
+);
+var ADVICE = "Advice only: GafferBot never bids, buys, lists or quick sells for the player (EA bans automated trading), so tell them to check prices in the game and do every trade themselves.";
+var cut = (v, n2) => Array.isArray(v) ? v.slice(0, n2) : v;
+FUT_TOOLS.push(
+  {
+    name: "get_fut_coach_plan",
+    title: "FUT Coach: what to do with my coins right now",
+    description: "EA FC Ultimate Team: the FUT Coach page (gafferbot.app/fut). Ordered steps for the player's coins and the squad they actually play: collect sold items, relist, sell or quick sell unused cards, free club swaps, the best upgrade for the budget, SBCs worth doing, and the best affordable flip, each with coins and why. Built from their helper-captured coins, transfer list, club and squad plus FUT.GG prices. " + ADVICE,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await runWorkspace(() => coachPlan(db, userId, platformParam(args.platform)));
+    })
+  },
+  {
+    name: "get_fut_daily_strategy",
+    title: "FUT Daily Strategy: today's buys, sells and quick sells",
+    description: "EA FC Ultimate Team: the Daily Strategy page (gafferbot.app/fut/strategy). Today's stance (buy, sell or flip day) and market mood, the one best coin move now, which picking rule is in use and why (replayed on past prices), buy picks with buy and sell prices, profit after tax, chance and 24h forecast, picks per price range, club cards to sell, cards worth more quick sold than listed, transfer list fixes (clear, relist, lower, quick sell), budget split and reserve, and the record of earlier picks. Viewing it stores today's plan so later days can score it, exactly as opening the page does. " + ADVICE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        budget: { type: "integer", minimum: 0, maximum: 2e9, description: "Coins to plan with. Leave out to use the coins the XI Lab helper last saw." },
+        risk: { type: "string", enum: ["careful", "normal", "bold"], description: "Default normal." }
+      },
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const budget = int3(a.budget);
+      const s = await dailyStrategy(db, userId, platformParam(a.platform), { budget: budget !== void 0 && budget >= 0 ? budget : null, risk: a.risk === "careful" || a.risk === "bold" ? a.risk : "normal" });
+      return { ...s, buys: cut(s.buys, 15), watch: cut(s.watch, 10), sells: cut(s.sells, 20), transfer_list: cut(s.transfer_list, 40) };
+    })
+  },
+  {
+    name: "get_fut_pack_advice",
+    title: "FUT Pack Advisor: which store packs are worth it",
+    description: "EA FC Ultimate Team: the Pack Advisor (gafferbot.app/fut/packs). Each pack the XI Lab helper saw in the player's EA store with its odds, expected value from FUT.GG prices against its coin price, a verdict (buy, only_for_fodder, skip, points_only, no_odds, no_prices), timing tips and their own recent pulls. Expected value is an estimate from published odds. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await packAdvice(db, userId, platformParam(args.platform));
+    })
+  },
+  {
+    name: "get_my_fut_account",
+    title: "My FUT account: coins, transfer list, SBCs, objectives",
+    description: "EA FC Ultimate Team: My Account (gafferbot.app/fut/account), as the XI Lab helper last saw it in the EA Web App: coins, FC Points and other currencies, profile, transfer list (sold, unsold, active, with what sold items bring in after tax), Transfer Targets, unassigned items and duplicates, open SBC sets and challenges, evolutions, objectives with progress, season progress, and tips. Each section says when it was captured. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await accountOverview(db, userId, platformParam(args.platform));
+    })
+  },
+  {
+    name: "get_my_fut_watchlist",
+    title: "My FUT watchlist (Market Lab)",
+    description: "EA FC Ultimate Team: the cards the player watches in Market Lab with their target buy and sell prices, the latest price and how far it is from each target. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await (await marketFor(db)).getWatchlist(userId, { platform: platformParam(args.platform) });
+    })
+  }
+);
+async function squadFor(db, userId, v) {
+  const id = str5(v);
+  if (id) return { squad: await (await workspaceFor(db)).getSquad(userId, id), note: null };
+  const cur = await currentSquad(db, userId);
+  if (!cur.squad) throw new ToolError(cur.note);
+  return { squad: cur.squad, note: cur.note };
+}
+var ANY_SQUAD = { type: "string", description: "A saved squad id (get_my_fut_squad with list: true). Leave out for the squad the player plays now (get_my_current_fut_squad)." };
+var slim = (s) => ({ id: s.id, name: s.name, formation: s.formation, slots: s.slots.map((x) => ({ slot: x.slot, position: x.position, card: x.card ? { id: x.card.id, name: x.card.name, rating: x.card.rating ?? null, positions: x.card.positions } : null })) });
+async function ownAiEnv(db, userId) {
+  const base = (k) => Deno.env.get(k);
+  const { env, own } = await envForUser(db, userId, base);
+  return own ? env : (k) => k === "ANTHROPIC_API_KEY" || k === "CLAUDE_API_KEY" ? void 0 : base(k);
+}
+FUT_TOOLS.push(
+  {
+    name: "get_my_current_fut_squad",
+    title: "The FUT squad I play now",
+    description: "EA FC Ultimate Team: the squad the player actually plays: their active squad from the EA Web App (XI Lab helper capture) with bench, else their newest saved squad, else the strongest eleven their club can field; says which and why. " + READ_ONLY,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: (_args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const c4 = await currentSquad(db, userId);
+      return { ...c4, squad: c4.squad ? slim(c4.squad) : null };
+    })
+  },
+  {
+    name: "fut_squad_advisor",
+    title: "FUT squad advisor: better picks for every place",
+    description: "EA FC Ultimate Team: Squad Builder's advisor. For each place in the squad: who plays there now, club cards that would do better ranked by skill (overall) or chemistry, the best market target they can afford with their coins and the best there is (by metarating); the same players rearranged into other formations; and the club's best eleven in each formation. " + RULES2 + " " + READ_ONLY,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD, by: { type: "string", enum: ["ovr", "chem"], description: "Rank by overall (default) or chemistry." }, platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const { squad, note } = await squadFor(db, userId, a.squad_id);
+      const [rules, mine] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true })]);
+      const r2 = await runWorkspace(() => squadAdvice(db, userId, squad, mine.map(toWorkspaceCard), rules, { by: a.by === "chem" ? "chem" : "ovr", platform: platformParam(a.platform) }));
+      const shape = (f2) => ({ ...f2, squad: slim(f2.squad) });
+      return { squad: slim(squad), squad_note: note, ...r2, slots: r2.slots.map((x) => ({ ...x, picks: x.picks.slice(0, 5) })), rearrange: r2.rearrange.slice(0, 5).map(shape), club: r2.club.slice(0, 5).map(shape) };
+    })
+  },
+  {
+    name: "fut_squad_upgrades",
+    title: "FUT upgrade path within a budget",
+    description: "EA FC Ultimate Team: the best single and two-card upgrades for a squad within a coin budget, from the market card list and the player's unused club cards (which cost nothing), with the cost, overall and chemistry change and metarating gain of each. " + FUTGG,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD, budget: { type: "integer", minimum: 0, maximum: 15e6, description: "Coins to spend." }, platform: PLATFORM }, required: ["budget"], additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const { squad, note } = await squadFor(db, userId, a.squad_id);
+      const r2 = await runWorkspace(() => upgradeOptions(db, userId, squad, { budget: a.budget, platform: a.platform }));
+      return { squad: slim(squad), squad_note: note, ...r2 };
+    })
+  },
+  {
+    name: "fut_ideal_squad",
+    title: "FUT ideal squad for how I play",
+    description: `EA FC Ultimate Team: Squad Builder's "Build my ideal squad". From how the player says they like to play (and optional style pills, number of strikers and defenders, or a fixed formation), it weighs formations by fit, what the Knowledge Bank community backs and what their club can field, then gives the formation, the XI from their club, custom tactics, player instructions and buy targets per position. Not saved. Style traits: ` + [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)].join(", ") + ". Server-side AI only runs on the player's own saved Claude key; otherwise playstyle words are read by simple rules. " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        playstyle: { type: "string", maxLength: MAX_PLAYSTYLE, description: 'In their words, e.g. "I like quick counters down the wings and crossing to a big striker".' },
+        traits: { type: "array", maxItems: 20, items: { type: "string", enum: [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)] } },
+        strikers: { type: "integer", enum: [1, 2, 3] },
+        defenders: { type: "integer", enum: [3, 4, 5] },
+        formation: { type: "string", description: "Fix the formation, e.g. 4-2-3-1." },
+        squad_id: ANY_SQUAD,
+        days: { type: "integer", minimum: 1, maximum: 365, description: "Community look-back (default 90)." },
+        platform: PLATFORM
+      },
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const formation = str5(a.formation) ?? null;
+      if (formation && !FORMATIONS[formation]) throw new ToolError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+      const platform = platformParam(a.platform);
+      const { squad } = await squadFor(db, userId, a.squad_id);
+      const [rules, mine, team2, env] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true }), loadTeam(db, userId, squad.id ?? null, platform), ownAiEnv(db, userId)]);
+      team2.squad = { id: squad.id, name: squad.name, formation: squad.formation, xi: squad.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
+      const known = [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)];
+      const traits = Array.isArray(a.traits) ? a.traits.filter((t) => typeof t === "string" && known.includes(t)) : [];
+      const r2 = await runWorkspace(() => idealSquad(db, userId, squad, mine.map(toWorkspaceCard), rules, {
+        playstyle: (str5(a.playstyle) ?? "").slice(0, MAX_PLAYSTYLE),
+        formation,
+        days: clampInt2(a.days, 1, 365, 90),
+        platform,
+        traits,
+        strikers: [1, 2, 3].includes(a.strikers) ? a.strikers : null,
+        defenders: [3, 4, 5].includes(a.defenders) ? a.defenders : null
+      }, team2, env, fetch));
+      return { ...r2, squad: slim(r2.squad) };
+    })
+  },
+  {
+    name: "get_fut_meta_formations",
+    title: "Top FUT meta formations right now",
+    description: "EA FC Ultimate Team: the three formations the Knowledge Bank community backs most right now, with how many claims, net sentiment and a line people said, plus the custom tactics talked about most. Falls back to the usual metas when there isn't enough talk. " + KB_NOTE,
+    inputSchema: { type: "object", properties: { days: { type: "integer", minimum: 1, maximum: 365, description: "Default 90." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await topMetas(db, userId, clampInt2(args.days, 1, 365, 90));
+    })
+  },
+  {
+    name: "get_fut_squad_roles",
+    title: "FC 27 roles of my squad's players",
+    description: "EA FC Ultimate Team: each squad card's FC 27 player roles (+ or ++) for the position it plays in the squad, so you can say who fits which role and tactic. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const { squad, note } = await squadFor(db, userId, args.squad_id);
+      return { squad: slim(squad), squad_note: note, roles: await runWorkspace(() => squadRoles(db, userId, squad)) };
+    })
+  },
+  {
+    name: "get_fut_team_plan",
+    title: 'Knowledge Bank "For my team" plan',
+    description: `EA FC Ultimate Team: the Knowledge Bank's "For my team" page. What the community says, applied to the player's squad and club: the formation to play and why, custom tactics and player instructions, and per position the players the community rates or calls overrated (with price, price outlook and whether they own them), the best cards by stats, and their own options. Tactics written by AI only when the player saved their own Claude key; otherwise the community picks alone. ` + KB_NOTE,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD, days: { type: "integer", minimum: 1, maximum: 365, description: "Default 30." }, platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const platform = platformParam(a.platform);
+      const [team2, env] = await Promise.all([loadTeam(db, userId, str5(a.squad_id) ?? null, platform), ownAiEnv(db, userId)]);
+      return await runWorkspace(() => teamPlan(db, userId, { days: clampInt2(a.days, 1, 365, 30), platform }, team2, env, fetch));
     })
   }
 );

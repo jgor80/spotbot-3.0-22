@@ -19,6 +19,22 @@ import { calendarFor } from "../_shared/fut/calendar.ts";
 import { fodderIndex } from "../_shared/fut/fodder.ts";
 import { objectivesPlan } from "../_shared/fut/objectives.ts";
 import { champsOverview } from "../_shared/fut/champs.ts";
+import { activeRules } from "../_shared/fut/service.ts";
+import { searchPlayers } from "../_shared/fut/player-finder.ts";
+import { ACCELERATE_TYPES, ALL_STATS, cleanPlayerQuery, PLAYSTYLES } from "../_shared/fut/stats.ts";
+import { compareAnyCards } from "../_shared/fut/card-compare.ts";
+import { cardPriceHistory } from "../_shared/fut/price-history.ts";
+import { coachPlan, playingNow } from "../_shared/fut/coach.ts";
+import { dailyStrategy } from "../_shared/fut/strategy.ts";
+import { packAdvice } from "../_shared/fut/packs.ts";
+import { accountOverview } from "../_shared/fut/account.ts";
+import { currentSquad, squadAdvice } from "../_shared/fut/current-squad.ts";
+import { upgradeOptions } from "../_shared/fut/upgrades-data.ts";
+import { idealSquad, MAX_PLAYSTYLE, PLAYER_TRAITS, SHAPE_TRAITS, topMetas } from "../_shared/fut/ideal-squad.ts";
+import { loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
+import { squadRoles } from "../_shared/fut/squad-suggest.ts";
+import { envForUser } from "../_shared/fut/ai-keys.ts";
+import { FORMATIONS, type Squad } from "../_shared/fut/xilab/workspace/index.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -111,7 +127,7 @@ export const FUT_TOOLS: Tool<FutCtx>[] = [
   {
     name: "get_fut_card",
     title: "FUT card details (XI Lab)",
-    description: "EA FC Ultimate Team: one card's details by card id (from get_my_fut_inventory or a squad). " + LABELS,
+    description: "EA FC Ultimate Team: one card's details by card id (from get_my_fut_inventory, search_fut_players, search_fut_market_cards or a squad): face stats plus every in-game attribute FUT.GG lists (acceleration, sprint speed, agility, finishing, composure and so on), foot, height, AcceleRATE, alternative positions, PlayStyles and FC 27 roles (+ / ++). " + LABELS,
     inputSchema: {
       type: "object",
       properties: { card_id: { type: "string", description: "Card id." } },
@@ -121,8 +137,8 @@ export const FUT_TOOLS: Tool<FutCtx>[] = [
     run: (args, ctx) => run(async () => {
       const { db, userId } = await account(ctx);
       const card = await getCard(db, userId, String(args.card_id ?? ""));
-      if (!card) throw new ToolError("Card not found among the player's cards.");
-      return { card };
+      if (!card) throw new ToolError("Card not found among the player's cards or the market card list.");
+      return { card, ...(await fullStats(db, card.id)) };
     }),
   },
   {
@@ -445,12 +461,12 @@ FUT_TOOLS.push(
   {
     name: "fut_sell_or_keep",
     title: "Sell or keep my club cards",
-    description: "EA FC Ultimate Team: a verdict for every tradeable card in the player's synced club, with the reason: keep (starts in a saved squad), keep_evo (a live evolution would make it start), hold_fodder (high-rated card at the cheapest price for its rating, better used in SBCs), sell_now (falling on FUT.GG), sell_high (near its two-week high), wait (still rising) or sell (steady, unused); plus coins after tax from selling. Prices are FUT.GG's. " + READ_ONLY,
+    description: "EA FC Ultimate Team: a verdict for every tradeable card in the player's synced club, with the reason: keep (starts in the squad they play in the EA Web App or a saved squad), keep_evo (a live evolution would make it start), hold_fodder (high-rated card at the cheapest price for its rating, better used in SBCs), sell_now (falling on FUT.GG), sell_high (near its two-week high), wait (still rising) or sell (steady, unused); plus coins after tax from selling. Prices are FUT.GG's. " + READ_ONLY,
     inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
     run: (args, ctx) => run(async () => {
       const { db, userId } = await account(ctx);
       const platform = platformParam((args as Record<string, unknown>).platform);
-      const r = await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }]))));
+      const r = await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }])), () => playingNow(db, userId)));
       return { ...r, advice: r.advice.slice(0, 60).map(({ trend: _t, ...a }) => a) };
     }),
   },
@@ -579,6 +595,356 @@ FUT_TOOLS.push(
       const category = str(args.category);
       if (category && !(KB_CATEGORIES as readonly string[]).includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
       return { map: await knowledgeMap(db, userId, days, category ?? null), note: KB_NOTE };
+    }),
+  },
+);
+
+// ---------------------------------------------------------------- full card stats, market card search, prices
+
+/** Every in-game attribute FUT.GG lists for a card, plus its roles: what Player Ratings shows. Empty when not fetched yet. */
+async function fullStats(db: FutDb, cardId: string) {
+  const [a, r] = await Promise.all([
+    db.from("card_attributes").select("*").eq("card_id", cardId).maybeSingle(),
+    db.from("card_roles").select("*").eq("card_id", cardId),
+  ]);
+  const row = (a?.data ?? null) as Record<string, unknown> | null;
+  const roles = ((r?.data ?? []) as Record<string, unknown>[]).map((x) => ({ position: x.position_code, role: x.role, level: x.level }));
+  if (!row) return { attributes: null, roles, attributes_note: "FUT.GG's full attributes haven't been read for this card yet (a few hundred cards are read per run)." };
+  const detail = (row.detail && typeof row.detail === "object" ? row.detail : {}) as Record<string, unknown>;
+  return {
+    attributes: { ...detail, foot: row.foot ?? null, height_cm: row.height_cm ?? null, accelerate_type: row.accelerate_type ?? null, alt_positions: row.alt_positions ?? [], total_igs: row.total_igs ?? null, fetched_at: row.fetched_at ?? null },
+    roles,
+  };
+}
+
+const STAT_LIST = ALL_STATS.map((x) => x.key).join(", ");
+const STAT_BOUND = { type: "array", maxItems: 12, items: { type: "object", properties: { stat: { type: "string" }, value: { type: "integer", minimum: 1, maximum: 5000 } }, required: ["stat", "value"], additionalProperties: false } };
+const FUTGG = "Cards and prices come from FUT.GG's public card list (lowest Buy Now estimates, refreshed twice a day plus hourly for some cards), not EA: say how old the prices are. " + READ_ONLY;
+const POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
+const clampInt = (v: unknown, min: number, max: number, dflt: number) => Math.min(max, Math.max(min, int(v) ?? dflt));
+
+FUT_TOOLS.push(
+  {
+    name: "search_fut_players",
+    title: "Search every FUT card with full stats (Player Ratings)",
+    description: "EA FC Ultimate Team: GafferBot's Player Ratings search over the whole market card list (not just the player's club), with each card's full in-game attributes, PlayStyles, PlayStyles+, roles, foot, height, AcceleRATE, price and whether the player owns it. Search by name (text), positions, rating, price, card type, league/nation/club, stat minimums and maximums (e.g. sprint_speed 90+), PlayStyles; rank by a weighted fit of stats (weights 1-5) or sort by any stat, price or name. Turn requests like \"fast CB under 50k with good passing\" into weights and limits yourself. Stat keys: " + STAT_LIST + ". " + FUTGG,
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", maxLength: 60, description: "Name (or part of it), e.g. \"Mbappe\"." },
+        positions: { type: "array", items: { type: "string", enum: POSITIONS }, maxItems: 12 },
+        include_alt_positions: { type: "boolean", description: "Match alternative positions too (default true)." },
+        card_type: { type: "string", enum: ["icon", "hero", "promo", "base"] },
+        min_rating: { type: "integer", minimum: 1, maximum: 99 }, max_rating: { type: "integer", minimum: 1, maximum: 99 },
+        min_price: { type: "integer", minimum: 0 }, max_price: { type: "integer", minimum: 0 },
+        priced_only: { type: "boolean", description: "Leave out cards with no price (SBC, objective, untradeable)." },
+        minimums: { ...STAT_BOUND, description: "Stat floors, e.g. [{stat: \"pac\", value: 90}]." },
+        maximums: { ...STAT_BOUND, description: "Stat ceilings, e.g. [{stat: \"height_cm\", value: 180}]." },
+        foot: { type: "string", enum: ["left", "right"] },
+        playstyles: { type: "array", items: { type: "string" }, maxItems: 6, description: `Must have these PlayStyles (or PlayStyles+). Names: ${PLAYSTYLES.join(", ")}.` },
+        playstyles_plus: { type: "array", items: { type: "string" }, maxItems: 4, description: "Must have these as PlayStyles+." },
+        accelerate_types: { type: "array", items: { type: "string", enum: [...ACCELERATE_TYPES] }, maxItems: 7 },
+        league: { type: "string" }, nation: { type: "string" }, club: { type: "string" },
+        owned_only: { type: "boolean", description: "Only cards in the player's synced club." },
+        weights: { type: "array", maxItems: 12, description: "Rank by fit: [{stat, weight 1-5}].", items: { type: "object", properties: { stat: { type: "string" }, weight: { type: "integer", minimum: 1, maximum: 5 } }, required: ["stat", "weight"], additionalProperties: false } },
+        sort: { type: "string", description: "A stat key, \"fit\", \"price\" or \"name\". Default: fit with weights, else overall." },
+        direction: { type: "string", enum: ["asc", "desc"] },
+        platform: PLATFORM,
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
+        offset: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const { platform, limit, offset, ...q } = args as Record<string, unknown>;
+      const r = await searchPlayers(db, userId, cleanPlayerQuery(q), { platform: platformParam(platform), limit: clampInt(limit, 1, 50, 20), offset: clampInt(offset, 0, 100_000, 0) });
+      return { ...r, note: "Use a card's id with get_fut_card, compare_any_fut_cards, get_fut_price_history, fut_meta_rating or get_fut_card_market_intelligence." };
+    }),
+  },
+  {
+    name: "search_fut_market_cards",
+    title: "FUT market card list with prices (Market cards)",
+    description: "EA FC Ultimate Team: the market-wide card list with each card's latest price and its 24-hour change, filtered by name, position, card type, rating and price, sorted by price, rating, biggest risers or fallers, or name. Use it to look up a card's price by name, compare prices of several cards, or see what's rising and falling. " + FUTGG,
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", maxLength: 60, description: "Name (or part of it)." },
+        position: { type: "string", enum: POSITIONS },
+        type: { type: "string", enum: ["icon", "hero", "promo", "base"] },
+        min_rating: { type: "integer", minimum: 1, maximum: 99 }, max_rating: { type: "integer", minimum: 1, maximum: 99 },
+        min_price: { type: "integer", minimum: 0, maximum: 15000000 }, max_price: { type: "integer", minimum: 0, maximum: 15000000 },
+        sort: { type: "string", enum: ["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"], description: "Default price_desc." },
+        platform: PLATFORM,
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
+        offset: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const position = str(a.position)?.toUpperCase() ?? null, type = str(a.type) ?? null, sort = str(a.sort) ?? "price_desc";
+      if (position && !POSITIONS.includes(position)) throw new ToolError("position must be a position code like ST or CB.");
+      if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new ToolError("type must be icon, hero, promo or base.");
+      if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new ToolError("Unknown sort.");
+      const opt = (v: unknown, min: number, max: number) => (int(v) === undefined ? null : Math.min(max, Math.max(min, int(v)!)));
+      const { data, error } = await db.rpc("futgg_market_cards", {
+        p_platform: platformParam(a.platform), p_q: str(a.query)?.slice(0, 60) ?? null, p_position: position, p_type: type,
+        p_min_rating: opt(a.min_rating, 1, 99), p_max_rating: opt(a.max_rating, 1, 99), p_min_price: opt(a.min_price, 0, 15_000_000), p_max_price: opt(a.max_price, 0, 15_000_000),
+        p_sort: sort, p_limit: clampInt(a.limit, 1, 50, 20), p_offset: clampInt(a.offset, 0, 100_000, 0),
+      });
+      if (error) throw new FutError(`Market cards are unavailable: ${error.message}`, 500);
+      return data;
+    }),
+  },
+  {
+    name: "get_fut_price_history",
+    title: "FUT card price history",
+    description: "EA FC Ultimate Team: one card's FUT.GG price over the last 1-90 days (default 14; twice daily plus hourly for tracked cards), with low, high, latest and changes, and market-wide drops marked. Card ids come from search_fut_players, search_fut_market_cards or the player's cards. " + FUTGG,
+    inputSchema: { type: "object", properties: { card_id: { type: "string" }, days: { type: "integer", minimum: 1, maximum: 90 }, platform: PLATFORM }, required: ["card_id"], additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const r = await cardPriceHistory(db, userId, platformParam(a.platform), String(a.card_id ?? ""), clampInt(a.days, 1, 90, 14));
+      // The full series is for charts; the AI gets the latest 60 points.
+      return { ...r, points: r.points.slice(-60), points_total: r.points.length };
+    }),
+  },
+  {
+    name: "compare_any_fut_cards",
+    title: "Compare any FUT cards with full stats",
+    description: "EA FC Ultimate Team: side by side for 2 to 4 of any cards (the player's or from the market list): every in-game attribute with an optional chem style applied to each, PlayStyles each has that the others don't, metaratings per position and the current FUT.GG price. Chem style boosts and metaratings are GafferBot's estimates. " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        card_ids: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 4 },
+        chem_styles: { type: "object", additionalProperties: { type: "string" }, description: "Optional: card id -> chem style name (e.g. Hunter, Shadow, Engine; GK: Wall, Shield, Cat, Glove)." },
+        platform: PLATFORM,
+      },
+      required: ["card_ids"],
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await compareAnyCards(db, userId, args as Record<string, unknown>);
+    }),
+  },
+  {
+    name: "get_my_fut_club_value",
+    title: "What my FUT club is worth",
+    description: "EA FC Ultimate Team: which cards in the player's synced club are tradeable and what the tradeable copies sell for now (latest FUT.GG price, or their own newer Web App capture), with totals before and after EA's 5% tax. Untradeable cards are counted, not valued. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, limit: { type: "integer", minimum: 1, maximum: 100, description: "Most valuable cards to list (default 30)." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const { data, error } = await db.rpc("club_trade_value", { p_user: userId, p_platform: platformParam(a.platform) });
+      if (error) throw new FutError(`Club value is unavailable: ${error.message}`, 500);
+      const d = (data ?? {}) as Record<string, unknown>;
+      const n = clampInt(a.limit, 1, 100, 30);
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(d)) out[k] = Array.isArray(v) && v.length > n ? v.slice(0, n) : v;
+      return out;
+    }),
+  },
+);
+
+// ---------------------------------------------------------------- the plans: Coach, Daily Strategy, packs, account
+
+const ADVICE = "Advice only: GafferBot never bids, buys, lists or quick sells for the player (EA bans automated trading), so tell them to check prices in the game and do every trade themselves.";
+const cut = <T>(v: T[] | null | undefined, n: number) => (Array.isArray(v) ? v.slice(0, n) : v);
+
+FUT_TOOLS.push(
+  {
+    name: "get_fut_coach_plan",
+    title: "FUT Coach: what to do with my coins right now",
+    description: "EA FC Ultimate Team: the FUT Coach page (gafferbot.app/fut). Ordered steps for the player's coins and the squad they actually play: collect sold items, relist, sell or quick sell unused cards, free club swaps, the best upgrade for the budget, SBCs worth doing, and the best affordable flip, each with coins and why. Built from their helper-captured coins, transfer list, club and squad plus FUT.GG prices. " + ADVICE,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await runWorkspace(() => coachPlan(db, userId, platformParam((args as Record<string, unknown>).platform)));
+    }),
+  },
+  {
+    name: "get_fut_daily_strategy",
+    title: "FUT Daily Strategy: today's buys, sells and quick sells",
+    description: "EA FC Ultimate Team: the Daily Strategy page (gafferbot.app/fut/strategy). Today's stance (buy, sell or flip day) and market mood, the one best coin move now, which picking rule is in use and why (replayed on past prices), buy picks with buy and sell prices, profit after tax, chance and 24h forecast, picks per price range, club cards to sell, cards worth more quick sold than listed, transfer list fixes (clear, relist, lower, quick sell), budget split and reserve, and the record of earlier picks. Viewing it stores today's plan so later days can score it, exactly as opening the page does. " + ADVICE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        budget: { type: "integer", minimum: 0, maximum: 2000000000, description: "Coins to plan with. Leave out to use the coins the XI Lab helper last saw." },
+        risk: { type: "string", enum: ["careful", "normal", "bold"], description: "Default normal." },
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const budget = int(a.budget);
+      const s = await dailyStrategy(db, userId, platformParam(a.platform), { budget: budget !== undefined && budget >= 0 ? budget : null, risk: a.risk === "careful" || a.risk === "bold" ? a.risk : "normal" });
+      return { ...s, buys: cut(s.buys, 15), watch: cut(s.watch, 10), sells: cut(s.sells, 20), transfer_list: cut(s.transfer_list, 40) };
+    }),
+  },
+  {
+    name: "get_fut_pack_advice",
+    title: "FUT Pack Advisor: which store packs are worth it",
+    description: "EA FC Ultimate Team: the Pack Advisor (gafferbot.app/fut/packs). Each pack the XI Lab helper saw in the player's EA store with its odds, expected value from FUT.GG prices against its coin price, a verdict (buy, only_for_fodder, skip, points_only, no_odds, no_prices), timing tips and their own recent pulls. Expected value is an estimate from published odds. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await packAdvice(db, userId, platformParam((args as Record<string, unknown>).platform));
+    }),
+  },
+  {
+    name: "get_my_fut_account",
+    title: "My FUT account: coins, transfer list, SBCs, objectives",
+    description: "EA FC Ultimate Team: My Account (gafferbot.app/fut/account), as the XI Lab helper last saw it in the EA Web App: coins, FC Points and other currencies, profile, transfer list (sold, unsold, active, with what sold items bring in after tax), Transfer Targets, unassigned items and duplicates, open SBC sets and challenges, evolutions, objectives with progress, season progress, and tips. Each section says when it was captured. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await accountOverview(db, userId, platformParam((args as Record<string, unknown>).platform));
+    }),
+  },
+  {
+    name: "get_my_fut_watchlist",
+    title: "My FUT watchlist (Market Lab)",
+    description: "EA FC Ultimate Team: the cards the player watches in Market Lab with their target buy and sell prices, the latest price and how far it is from each target. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await (await marketFor(db)).getWatchlist(userId, { platform: platformParam((args as Record<string, unknown>).platform) });
+    }),
+  },
+);
+
+// ---------------------------------------------------------------- Squad Builder helpers (nothing saved)
+
+/** The squad the AI named, else the one the player plays now (Web App capture, newest saved, or the club's best XI). */
+async function squadFor(db: FutDb, userId: string, v: unknown): Promise<{ squad: Squad; note: string | null }> {
+  const id = str(v);
+  if (id) return { squad: await (await workspaceFor(db)).getSquad(userId, id) as Squad, note: null };
+  const cur = await currentSquad(db, userId);
+  if (!cur.squad) throw new ToolError(cur.note);
+  return { squad: cur.squad, note: cur.note };
+}
+const ANY_SQUAD = { type: "string", description: "A saved squad id (get_my_fut_squad with list: true). Leave out for the squad the player plays now (get_my_current_fut_squad)." };
+const slim = (s: Squad) => ({ id: s.id, name: s.name, formation: s.formation, slots: s.slots.map((x) => ({ slot: x.slot, position: x.position, card: x.card ? { id: x.card.id, name: x.card.name, rating: x.card.rating ?? null, positions: x.card.positions } : null })) });
+/** AI on the server only runs on the player's own saved Claude key; otherwise the AI app does the thinking itself. */
+async function ownAiEnv(db: FutDb, userId: string) {
+  const base = (k: string) => Deno.env.get(k);
+  const { env, own } = await envForUser(db, userId, base);
+  return own ? env : (k: string) => (k === "ANTHROPIC_API_KEY" || k === "CLAUDE_API_KEY" ? undefined : base(k));
+}
+
+FUT_TOOLS.push(
+  {
+    name: "get_my_current_fut_squad",
+    title: "The FUT squad I play now",
+    description: "EA FC Ultimate Team: the squad the player actually plays: their active squad from the EA Web App (XI Lab helper capture) with bench, else their newest saved squad, else the strongest eleven their club can field; says which and why. " + READ_ONLY,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: (_args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const c = await currentSquad(db, userId);
+      return { ...c, squad: c.squad ? slim(c.squad) : null };
+    }),
+  },
+  {
+    name: "fut_squad_advisor",
+    title: "FUT squad advisor: better picks for every place",
+    description: "EA FC Ultimate Team: Squad Builder's advisor. For each place in the squad: who plays there now, club cards that would do better ranked by skill (overall) or chemistry, the best market target they can afford with their coins and the best there is (by metarating); the same players rearranged into other formations; and the club's best eleven in each formation. " + RULES + " " + READ_ONLY,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD, by: { type: "string", enum: ["ovr", "chem"], description: "Rank by overall (default) or chemistry." }, platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const { squad, note } = await squadFor(db, userId, a.squad_id);
+      const [rules, mine] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true })]);
+      const r = await runWorkspace(() => squadAdvice(db, userId, squad, mine.map(toWorkspaceCard), rules, { by: a.by === "chem" ? "chem" : "ovr", platform: platformParam(a.platform) }));
+      const shape = (f: { squad: Squad }) => ({ ...f, squad: slim(f.squad) });
+      return { squad: slim(squad), squad_note: note, ...r, slots: r.slots.map((x) => ({ ...x, picks: x.picks.slice(0, 5) })), rearrange: r.rearrange.slice(0, 5).map(shape), club: r.club.slice(0, 5).map(shape) };
+    }),
+  },
+  {
+    name: "fut_squad_upgrades",
+    title: "FUT upgrade path within a budget",
+    description: "EA FC Ultimate Team: the best single and two-card upgrades for a squad within a coin budget, from the market card list and the player's unused club cards (which cost nothing), with the cost, overall and chemistry change and metarating gain of each. " + FUTGG,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD, budget: { type: "integer", minimum: 0, maximum: 15000000, description: "Coins to spend." }, platform: PLATFORM }, required: ["budget"], additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const { squad, note } = await squadFor(db, userId, a.squad_id);
+      const r = await runWorkspace(() => upgradeOptions(db, userId, squad, { budget: a.budget, platform: a.platform }));
+      return { squad: slim(squad), squad_note: note, ...r };
+    }),
+  },
+  {
+    name: "fut_ideal_squad",
+    title: "FUT ideal squad for how I play",
+    description: "EA FC Ultimate Team: Squad Builder's \"Build my ideal squad\". From how the player says they like to play (and optional style pills, number of strikers and defenders, or a fixed formation), it weighs formations by fit, what the Knowledge Bank community backs and what their club can field, then gives the formation, the XI from their club, custom tactics, player instructions and buy targets per position. Not saved. Style traits: " + [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)].join(", ") + ". Server-side AI only runs on the player's own saved Claude key; otherwise playstyle words are read by simple rules. " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        playstyle: { type: "string", maxLength: MAX_PLAYSTYLE, description: "In their words, e.g. \"I like quick counters down the wings and crossing to a big striker\"." },
+        traits: { type: "array", maxItems: 20, items: { type: "string", enum: [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)] } },
+        strikers: { type: "integer", enum: [1, 2, 3] },
+        defenders: { type: "integer", enum: [3, 4, 5] },
+        formation: { type: "string", description: "Fix the formation, e.g. 4-2-3-1." },
+        squad_id: ANY_SQUAD,
+        days: { type: "integer", minimum: 1, maximum: 365, description: "Community look-back (default 90)." },
+        platform: PLATFORM,
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const formation = str(a.formation) ?? null;
+      if (formation && !FORMATIONS[formation]) throw new ToolError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+      const platform = platformParam(a.platform);
+      const { squad } = await squadFor(db, userId, a.squad_id);
+      const [rules, mine, team, env] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true }), loadTeam(db, userId, squad.id ?? null, platform), ownAiEnv(db, userId)]);
+      team.squad = { id: squad.id, name: squad.name, formation: squad.formation, xi: squad.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
+      const known = [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)];
+      const traits = Array.isArray(a.traits) ? (a.traits as unknown[]).filter((t): t is string => typeof t === "string" && known.includes(t)) : [];
+      const r = await runWorkspace(() => idealSquad(db, userId, squad, mine.map(toWorkspaceCard), rules, {
+        playstyle: (str(a.playstyle) ?? "").slice(0, MAX_PLAYSTYLE), formation, days: clampInt(a.days, 1, 365, 90), platform, traits,
+        strikers: [1, 2, 3].includes(a.strikers as number) ? a.strikers as 1 | 2 | 3 : null, defenders: [3, 4, 5].includes(a.defenders as number) ? a.defenders as 3 | 4 | 5 : null,
+      }, team, env, fetch));
+      return { ...r, squad: slim(r.squad) };
+    }),
+  },
+  {
+    name: "get_fut_meta_formations",
+    title: "Top FUT meta formations right now",
+    description: "EA FC Ultimate Team: the three formations the Knowledge Bank community backs most right now, with how many claims, net sentiment and a line people said, plus the custom tactics talked about most. Falls back to the usual metas when there isn't enough talk. " + KB_NOTE,
+    inputSchema: { type: "object", properties: { days: { type: "integer", minimum: 1, maximum: 365, description: "Default 90." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await topMetas(db, userId, clampInt((args as Record<string, unknown>).days, 1, 365, 90));
+    }),
+  },
+  {
+    name: "get_fut_squad_roles",
+    title: "FC 27 roles of my squad's players",
+    description: "EA FC Ultimate Team: each squad card's FC 27 player roles (+ or ++) for the position it plays in the squad, so you can say who fits which role and tactic. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const { squad, note } = await squadFor(db, userId, (args as Record<string, unknown>).squad_id);
+      return { squad: slim(squad), squad_note: note, roles: await runWorkspace(() => squadRoles(db, userId, squad)) };
+    }),
+  },
+  {
+    name: "get_fut_team_plan",
+    title: "Knowledge Bank \"For my team\" plan",
+    description: "EA FC Ultimate Team: the Knowledge Bank's \"For my team\" page. What the community says, applied to the player's squad and club: the formation to play and why, custom tactics and player instructions, and per position the players the community rates or calls overrated (with price, price outlook and whether they own them), the best cards by stats, and their own options. Tactics written by AI only when the player saved their own Claude key; otherwise the community picks alone. " + KB_NOTE,
+    inputSchema: { type: "object", properties: { squad_id: ANY_SQUAD, days: { type: "integer", minimum: 1, maximum: 365, description: "Default 30." }, platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const platform = platformParam(a.platform);
+      const [team, env] = await Promise.all([loadTeam(db, userId, str(a.squad_id) ?? null, platform), ownAiEnv(db, userId)]);
+      return await runWorkspace(() => teamPlan(db, userId, { days: clampInt(a.days, 1, 365, 30), platform }, team, env, fetch));
     }),
   },
 );
