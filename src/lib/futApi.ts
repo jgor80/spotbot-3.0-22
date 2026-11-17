@@ -137,9 +137,13 @@ export interface StrategyMove {
 }
 export interface StrategyRange { key: "low" | "medium" | "high"; label: string; sub: string; pick: StrategyBuy | null; affordable: boolean | null; others: StrategyBuy[] }
 export interface StrategyPrices { at: string | null; refresh_at: string | null; source: "live" | "refresh"; age_h: number | null; note: string }
+export interface StrategyRuleResult { rule: string; name: string; detail: string; n: number; refreshes: number; net48: number | null; pays: number | null; fell10: number | null; peak_mid: number | null }
+/** Which way of picking buys the plan uses, and how every way did 2 days later on past refreshes. */
+export interface StrategyPicking { rule: string; name: string; detail: string; why: string; hold: boolean; replay: { at: string; refreshes: number; days: number; market48: number | null; rules: StrategyRuleResult[] } | null }
 export interface DailyStrategy {
   platform: MarketPlatform; as_of: string; uk_date: string; prices_at: string | null; headline: string; stance: "buy" | "sell" | "flip";
   mood: { label: string; median_24h: number | null; median_72h: number | null; cards: number };
+  picking?: StrategyPicking;
   timing: { uk_time: string; weekday: string; buy_bias: number; sell_bias: number; extra_reserve: number; now: string; next: string | null; events: { name: string; date: string; days: number; advice: string }[]; daily: string };
   budget: { coins: number | null; coins_source: "helper" | "entered" | null; coins_at: string | null; reserve_pct: number; reserve: number | null; spend: number | null; per_pick: number | null; buy_spend: number; expected_profit: number; free_slots: number; risk: StrategyRisk };
   /** The one best move to make coins right now, recomputed with every price update. */

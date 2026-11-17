@@ -149,6 +149,23 @@ function PriceRanges({ ranges }: { ranges: StrategyRange[] }) {
   </div>)}</div>;
 }
 
+const signed = (v: number | null) => v == null ? "–" : `${v > 0 ? "+" : ""}${v}%`;
+/** The picking rule in use, and how each rule's picks did 2 days later on past refreshes (after the 5% tax). */
+function Picking({ p }: { p: NonNullable<DailyStrategy["picking"]> }) {
+  const rp = p.replay;
+  return <div className="space-y-3">
+    <p className={`text-sm ${p.hold ? "text-warning" : ""}`}><strong>{p.name}.</strong> {p.detail} {p.why}</p>
+    {rp && <>
+      <div className="overflow-x-auto"><DataTable headers={["Way of picking", "Picks checked", "2 days later, after tax", "Climbed enough to beat tax", "Fell 10%+"]} rows={rp.rules.map(r => [
+        <span className={r.rule === p.rule ? "font-semibold text-primary" : "font-medium"}>{r.name}{r.rule === p.rule ? " (used now)" : ""}</span>,
+        numberText(r.n), <span className={`tabular-nums ${r.net48 != null && r.net48 > 0 ? "text-success" : r.net48 != null && r.net48 < 0 ? "text-destructive" : ""}`}>{signed(r.net48)}</span>,
+        r.pays == null ? "–" : `${r.pays}%`, r.fell10 == null ? "–" : `${r.fell10}%`,
+      ])} /></div>
+      <p className="text-xs text-muted-foreground">Each rule was run on {rp.refreshes} past price refreshes over about {Math.max(1, Math.round(rp.days))} day{Math.round(rp.days) === 1 ? "" : "s"} as if the plan had been built then, taking its top 10 picks and checking FUT.GG's price 2 days later{rp.market48 != null ? `. The middle card moved ${signed(rp.market48)} over the same 2 days` : ""}. FUT.GG prices are Buy Now estimates, not sales, so real results also depend on getting the card at that price.</p>
+    </>}
+  </div>;
+}
+
 function Plan({ d }: { d: DailyStrategy }) {
   const sized = d.budget.coins != null;
   const r = d.record;
@@ -184,9 +201,13 @@ function Plan({ d }: { d: DailyStrategy }) {
       <PriceRanges ranges={d.ranges} />
     </Section>}
 
+    {d.picking && <Section title="How it picks">
+      <Picking p={d.picking} />
+    </Section>}
+
     <Section title={`Buy and flip (${d.buys.length})`}>
       {d.buys.length ? <ul className="space-y-3">{d.buys.map(b => <BuyRow key={b.ea_item_id} b={b} sized={sized} />)}</ul> :
-        <p className="text-sm text-muted-foreground">No card is far enough under its usual price to flip at a profit after tax today. Keeping coins is a fine plan.</p>}
+        <p className="text-sm text-muted-foreground">No card passes today's picking rule with a profit after tax. Keeping coins is a fine plan.</p>}
     </Section>
 
     <Section title={`Sell from your club (${d.sells.length})`}>

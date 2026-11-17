@@ -64,8 +64,8 @@ Deno.test("applying the model: lower targets, re-ranked picks, learned chances i
   const model = learnModel("console", rows, NOW);
   const timing = marketTiming(Date.parse("2026-11-10T09:00:00Z"));
   const cards = [dipCard(1, { rating: 80 }), dipCard(2, { rating: 85 })].map((card) => ({ card, stats: cardStats(card, 156)! }));
-  const plain = scoreBuys(cards, timing, { max_price: 1e9, min_roi: 0.03, owned: new Set() });
-  const learned = scoreBuys(cards, timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), model });
+  const plain = scoreBuys(cards, timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), rule: "dip" });
+  const learned = scoreBuys(cards, timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), model, rule: "dip" });
   assert(plain[0]!.target_raw === plain[0]!.sell_at && plain[0]!.p_hit === null, "no model: plain target");
   const fod = learned.find((b) => b.ea_item_id === 2)!, gold = learned.find((b) => b.ea_item_id === 1)!;
   assert(learned[0]!.ea_item_id === 2, "fodder picks hit more often, so they rank first");
@@ -163,8 +163,8 @@ Deno.test("price moves in the plan: a bounced dip's target comes down to what ha
   const card: SeriesCard = { ea_item_id: 9, name: "Today", version: "Rare", rating: 80, position: "ST", is_icon: false, is_hero: false, tracked: true,
     prices: [12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 10_000, 10_100], ages: [84, 72, 60, 48, 36, 24, 12, 0] };
   const timing = marketTiming(NOW), s = cardStats(card, 84)!;
-  const plain = scoreBuys([{ card, stats: s }], timing, { max_price: 1e9, min_roi: 0.03, owned: new Set() })[0]!;
-  const learned = scoreBuys([{ card, stats: s }], timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), model })[0]!;
+  const plain = scoreBuys([{ card, stats: s }], timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), rule: "dip" })[0]!;
+  const learned = scoreBuys([{ card, stats: s }], timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), model, rule: "dip" })[0]!;
   assert(plain.sell_at === 11_750 && learned.sell_at < plain.sell_at && learned.sell_at > learned.buy_at, `${plain.sell_at} → ${learned.sell_at}`);
   assert(learned.p_hit !== null && learned.why.some((w) => w.includes("past price moves")), JSON.stringify(learned.why));
 });
@@ -199,7 +199,7 @@ Deno.test("2026-11-14 review: no silver or bronze flips, targets capped at 30% a
   const mk = (id: number, extra: Partial<SeriesCard>, prices: number[]): SeriesCard => ({ ea_item_id: id, name: `C${id}`, version: "Rare", rating: 80, position: "ST", is_icon: false, is_hero: false, tracked: true, prices, ages: prices.map((_, i) => (prices.length - 1 - i) * 12), ...extra });
   const silver = mk(1, { rating: 70 }, [3_000, 3_000, 3_000, 3_000, 3_000, 3_000, 2_500, 2_500]);
   const deep = mk(2, {}, [10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 6_000, 6_000]);
-  const out = scoreBuys([silver, deep].map((card) => ({ card, stats: cardStats(card, 84)! })), timing, { max_price: 1e9, min_roi: 0.03, owned: new Set() });
+  const out = scoreBuys([silver, deep].map((card) => ({ card, stats: cardStats(card, 84)! })), timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), rule: "dip" });
   assert(out.length === 1 && out[0]!.ea_item_id === 2 && out[0]!.sell_at === 7_800, JSON.stringify(out.map((b) => [b.ea_item_id, b.sell_at])));
 });
 
