@@ -46,7 +46,7 @@ export interface Profile {
 }
 const TRADE_STATES = ["listed", "sold", "expired", "unlisted", "winning", "outbid", "won", "lost", "watching"] as const;
 export type TradeState = typeof TRADE_STATES[number];
-export interface PileItem { item_id: number; ea_item_id: number; item_type: string | null; rating: number | null; rare_flag: number | null; untradeable: boolean }
+export interface PileItem { item_id: number; ea_item_id: number; item_type: string | null; rating: number | null; rare_flag: number | null; untradeable: boolean; discard_value?: number | null }
 export interface TradeItem extends PileItem { trade_id: string | null; state: TradeState; buy_now: number | null; current_bid: number | null; starting_bid: number | null; expires_at: string | null; last_sale_price: number | null }
 export interface UnassignedItem extends PileItem { duplicate: boolean }
 export interface SbcSet {
@@ -83,7 +83,7 @@ function parseProfile(v: unknown): Profile | null {
 function parsePileItem(v: Row): PileItem | null {
   const item_id = id(v.item_id), ea_item_id = id(v.ea_item_id);
   if (!item_id || !ea_item_id) return null;
-  return { item_id, ea_item_id, item_type: text(v.item_type, 30), rating: rating(v.rating), rare_flag: num(v.rare_flag, 1000), untradeable: bool(v.untradeable) };
+  return { item_id, ea_item_id, item_type: text(v.item_type, 30), rating: rating(v.rating), rare_flag: num(v.rare_flag, 1000), untradeable: bool(v.untradeable), ...(v.discard_value != null ? { discard_value: num(v.discard_value, 15_000_000) } : {}) };
 }
 
 function parseTrades(v: unknown): TradeItem[] | null {

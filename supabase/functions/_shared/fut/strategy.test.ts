@@ -2,7 +2,7 @@
 // feeds it, on real PostgreSQL (PGlite).
 import { PGlite } from "npm:@electric-sql/pglite@0.5.15";
 import { decodeIndex, decodePrices, liveFutggPrices, resetLiveCache } from "./futgg-live.ts";
-import { bestMove, blackFriday, buildStrategy, nextRefresh, withLive, cardKind, cardStats, marketTiming, pileFixes, scorePast, scoreSells, ukClock, type SeriesCard, type StrategyInput } from "./strategy.ts";
+import { bestMove, blackFriday, buildStrategy, nextRefresh, withLive, cardKind, cardStats, marketTiming, pileFixes, scorePast, scoreSells, ukClock, type RuleReplay, type SeriesCard, type StrategyInput } from "./strategy.ts";
 function assert(value: unknown, message = "Assertion failed"): asserts value { if (!value) throw new Error(message); }
 
 // Tuesday 10 November 2026, 09:00 UTC (09:00 UK)
@@ -14,7 +14,10 @@ const card = (id: number, prices: number[], extra: Partial<SeriesCard> = {}): Se
 });
 // A steady market of 60 cards so the market mood has enough cards to read
 const flat = Array.from({ length: 60 }, (_, i) => card(1000 + i, Array(14).fill(5000 + i * 100)));
+// Most tests below exercise the dip rule; the picking-rule tests at the end cover choosing between rules.
+const DIP_WINS: RuleReplay = { at: "2026-11-10T06:00:00Z", refreshes: 10, days: 5, market48: 0, rules: [{ rule: "dip", n: 100, refreshes: 10, net48: 5, pays: 60, fell10: 5, peak_mid: null }] };
 const input = (cards: SeriesCard[], o: Partial<StrategyInput> = {}): StrategyInput => ({
+  rules: DIP_WINS,
   now: TUE, coins: 100_000, coins_source: "helper", coins_at: null,
   series: { latest: "2026-11-10T06:00:00Z", window_h: 156, cards: [...flat, ...cards] },
   club: null, tradepile: null, tradepile_max: 100, squad_card_ids: new Set(), past: [], ...o,

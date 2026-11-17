@@ -186,7 +186,7 @@ export function marketTiming(now: number): Timing {
 // ------------------------------------------------------------------ the plan
 
 export interface ClubCard { card_id: string; ea_item_id: number | null; name: string; version: string | null; rating: number | null; position: string | null; tradeable_quantity: number; price: number | null }
-export interface PileItem { ea_item_id: number; state: string; buy_now: number | null; current_bid: number | null; untradeable: boolean; rating: number | null }
+export interface PileItem { ea_item_id: number; state: string; buy_now: number | null; current_bid: number | null; untradeable: boolean; rating: number | null; rare_flag?: number | null; discard_value?: number | null }
 export interface PastPlan { plan_date: string; prices_at: string | null; buys: { ea_item_id: number; name: string; buy_at: number; sell_at: number }[] }
 
 export interface StrategyInput {
@@ -199,6 +199,8 @@ export interface StrategyInput {
   squad_card_ids: Set<string>;
   past: PastPlan[];
   risk?: "careful" | "normal" | "bold";
+  /** How each picking rule did on past refreshes (replayRules); falls back to the model's copy. */
+  rules?: RuleReplay | null;
   /** What the learning job has learned from earlier picks on this platform (strategy-model.ts). */
   model?: StrategyModel | null;
   /** Trades from the user's trade log that followed an earlier pick. */
@@ -230,13 +232,42 @@ export interface SellPick {
   right_rate: number | null;
   forecast: Forecast | null;
 }
-export interface PileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
+export interface PileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "quicksell" | "relist" | "lower"; list_at: number | null; why: string; quick_sell?: number | null }
 
 const RISK = { careful: { reserve: 0.35, picks: 4, cap: 0.2, min_roi: 0.05 }, normal: { reserve: 0.2, picks: 6, cap: 0.3, min_roi: 0.03 }, bold: { reserve: 0.1, picks: 8, cap: 0.4, min_roi: 0.02 } };
 const MIN_PROFIT = 150;
 
-/** Candidates for flipping: liquid cards trading clearly below their 7-day middle that have stopped falling. */
-export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timing: Timing, o: { max_price: number; min_roi: number; owned: Set<number>; model?: StrategyModel | null; fresh?: Set<number> | null }): BuyPick[] {
+// Ways of picking buys (Jeff, 2026-11-17: "most of the picks are still dropping some dramatically"). The first rule
+// only asked "is it under its 7-day middle?". In a market that keeps sliding, nearly every card is under its week
+// because it is still on the way down, so that rule kept buying falling cards. The other rules also ask the price to
+// have stopped falling for a day and not to be doing worse than the market. replayRules() runs every rule on the
+// stored refreshes and checks the price 2 days later, and the plan uses the one that has really made money lately.
+export type BuyRule = "dip" | "settled" | "rising" | "steady";
+export const BUY_RULES: BuyRule[] = ["dip", "settled", "rising", "steady"];
+export const DEFAULT_RULE: BuyRule = "settled";
+export const RULE_LABEL: Record<BuyRule, { name: string; detail: string }> = {
+  dip: { name: "Any dip", detail: "Cards 5%+ under their 7-day middle price (the old rule)." },
+  settled: { name: "Dips that stopped falling", detail: "5%+ under their week, no lower than a day ago, and not falling faster than the market." },
+  rising: { name: "Cards on the way up", detail: "Up 3%+ over 3 days and not down over the last day, doing better than the market, without a sudden spike." },
+  steady: { name: "Steady cards near their low", detail: "Flat for 3 days, at or under their week's middle, with a narrow price range." },
+};
+/** The middle 24-hour and 3-day move (in %) across tracked cards: lets a rule tell a weak card from a weak market. */
+export interface MarketMove { m24: number | null; m72: number | null }
+
+/** Middle 24h and 3-day % moves across tracked cards with a current price. */
+export function marketMove(stats: Map<number, CardStats>, byEa: Map<number, SeriesCard>): MarketMove {
+  const d24: number[] = [], d72: number[] = [];
+  for (const [ea, s] of stats) {
+    if (!byEa.get(ea)?.tracked || s.latest_age_h > 13) continue;
+    if (s.change_24h !== null) d24.push(s.change_24h);
+    if (s.change_72h !== null) d72.push(s.change_72h);
+  }
+  return { m24: d24.length >= 50 ? Math.round(median(d24) * 10) / 10 : null, m72: d72.length >= 50 ? Math.round(median(d72) * 10) / 10 : null };
+}
+
+/** Candidates for flipping, by one of the picking rules above (default: dips that have stopped falling). */
+export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timing: Timing, o: { max_price: number; min_roi: number; owned: Set<number>; model?: StrategyModel | null; fresh?: Set<number> | null; rule?: BuyRule; market?: MarketMove | null; rise?: number | null }): BuyPick[] {
+  const rule = o.rule ?? DEFAULT_RULE, m72 = o.market?.m72 ?? null;
   const reach = o.model?.ready ? o.model.buys.reach : 1;
   const out: BuyPick[] = [];
   for (const { card, stats: s } of cards) {
@@ -247,15 +278,24 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     if (s.new_card) continue; // fresh promo cards usually keep falling for days
     if (o.fresh && !o.fresh.has(card.ea_item_id)) continue; // no current Buy Now price from FUT.GG: don't guess
     const discount = (s.median - s.latest) / s.median;
-    if (discount < 0.05) continue;
     // Far under its week on a liquid card is usually a bad price point or a crash, not a bargain.
     if (discount > 0.45) continue;
     // A price that just jumped well above the last refresh (an SBC spike) isn't a dip.
     if (s.prev !== null && s.latest > s.prev * 1.25) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue; // still making new lows: a falling knife
+    const d24 = s.change_24h, d72 = s.change_72h, vsMarket = d72 !== null && m72 !== null ? d72 - m72 : null;
+    const wide = (s.max - s.min) / s.median;
+    if (rule === "dip" && discount < 0.05) continue;
+    if (rule === "settled" && !(discount >= 0.05 && discount <= 0.35 && s.falling === 0 && d24 !== null && d24 >= 0 && (d72 === null || d72 > -15) && (vsMarket === null || vsMarket >= -3))) continue;
+    if (rule === "rising" && !(d72 !== null && d72 >= 3 && d72 <= 30 && d24 !== null && d24 >= 0 && s.falling === 0 && (vsMarket === null || vsMarket >= 3) && d24 <= 15 && wide <= 0.6)) continue;
+    if (rule === "steady" && !(d72 !== null && Math.abs(d72) <= 3 && d24 !== null && d24 >= -1 && d24 <= 3 && s.latest <= s.median && wide <= 0.25)) continue;
     const buy_at = down(s.latest);
-    // Aim for the usual price, but never more than 30% above today's: dips that paid in our data climbed 10 to 30%.
-    const target_raw = down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
+    // Dips aim for the usual price, but never more than 30% above today's: dips that paid in our data climbed 10 to
+    // 30%. Rising and steady cards aim for the rise such picks really reached (from the replay), at least 8%.
+    const rise = clamp(o.rise ?? 0.08, 0.08, 0.3);
+    const target_raw = rule === "rising" ? down(s.latest * (1 + rise))
+      : rule === "steady" ? down(Math.min(Math.max(s.max * 0.98, s.latest * (1 + rise)), s.latest * 1.3))
+      : down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
     // Learning: when picks usually peak short of the middle price, aim for the part of the gap they really reach.
     let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     // Before enough picks have settled: aim for the rise that half the cards in the same spot reached within 2 days.
@@ -273,7 +313,8 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     // had happened), while dips still falling or flat recovered more often.
     let conf = clamp(s.points / 12, 0.4, 1) * (range > 0.6 ? 0.6 : 1);
     if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
-    const why = [`${pct(discount)}% under its 7-day middle price (${c(s.median)}).`];
+    const why = [discount >= 0.02 ? `${pct(discount)}% under its 7-day middle price (${c(s.median)}).` : discount <= -0.02 ? `${pct(-discount)}% over its 7-day middle price (${c(s.median)}), and climbing.` : `At its 7-day middle price (${c(s.median)}).`];
+    if (d24 !== null && d72 !== null) why.push(`${d72 >= 0 ? "Up" : "Down"} ${Math.abs(d72)}% over 3 days${vsMarket !== null ? ` (${vsMarket >= 0 ? "better" : "worse"} than the market by ${Math.abs(Math.round(vsMarket * 10) / 10)} points)` : ""}, ${d24 >= 0 ? `${d24 > 0 ? "up" : "flat"} over the last day` : `down ${Math.abs(d24)}% over the last day`}.`);
     if (s.rising >= 1) why.push(`Bounced off its low: up ${s.rising === 1 ? "since the last refresh" : `${s.rising} refreshes in a row`}.`);
     else if (s.falling === 0) why.push("Stopped falling at the last refresh.");
     why.push(`Traded between ${c(s.min)} and ${c(s.max)} this week.`);
@@ -296,7 +337,9 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
       why.push(`Past picks like this reached their target ${Math.round(learned.p_hit * 100)}% of the time${learned.similar ? ` (from ${learned.similar}+ similar picks)` : ""}.`);
       if (learned.factor < 0.8) risks.push("Picks like this have done worse than average, so it's ranked lower.");
     }
-    const score = (roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi) * learned.factor;
+    // Stronger than the market ranks higher: the cards that held up best kept doing so more often than weak ones.
+    const strength = vsMarket === null ? 1 : clamp(1 + vsMarket / 40, 0.7, 1.4);
+    const score = (roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi) * learned.factor * strength;
     if (learned.p_hit !== null) conf = learned.p_hit >= 0.6 ? 1 : learned.p_hit >= 0.4 ? 0.7 : 0.4;
     out.push({
       ea_item_id: card.ea_item_id, name: card.name, version: card.version, rating: card.rating, position: card.position, kind,
@@ -350,12 +393,77 @@ export function pileFixes(items: PileItem[], stats: Map<number, CardStats>, name
   for (const i of items) {
     const s = stats.get(i.ea_item_id), price = s && s.latest_age_h <= 13 ? s.latest : null;
     const name = names.get(i.ea_item_id) ?? `Item ${i.ea_item_id}`;
+    const stuck = (i.state === "expired" || i.state === "unlisted") && !i.untradeable;
+    const qs = stuck ? quickSellCall({ rating: i.rating, special: (i.rare_flag ?? 0) > 1, exact: i.discard_value ?? null, price: price ?? i.buy_now, failed: i.state === "expired", change_72h: s?.change_72h ?? null }) : null;
     if (i.state === "sold") out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "clear", list_at: null, why: `Sold for ${c(i.current_bid ?? i.buy_now ?? 0)}. Clear it to collect the coins and free the slot.` });
-    else if ((i.state === "expired" || i.state === "unlisted") && !i.untradeable) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
+    else if (qs?.quicksell) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "quicksell", list_at: null, why: qs.why, quick_sell: qs.value });
+    else if (stuck) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
     else if (i.state === "listed" && price && i.buy_now && i.buy_now > price * 1.1) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "lower", list_at: near(price), why: `Listed at ${c(i.buy_now)}, ${pct(i.buy_now / price - 1)}% above the market. When it expires, relist at ${c(near(price))}.` });
   }
-  const order = { clear: 0, relist: 1, lower: 2 };
+  const order = { clear: 0, quicksell: 1, relist: 2, lower: 3 };
   return out.sort((a, b) => order[a.action] - order[b.action] || (b.price ?? 0) - (a.price ?? 0));
+}
+
+// ------------------------------------------------------------------ quick sell or list? (Jeff, 2026-11-17)
+
+// FC 27 quick sell values of base player cards by overall rating, 40 to 99 (fifauteam.com "FC 27 discard prices",
+// 2026-09). TOTW, promo, hero and icon cards quick sell for at least this. No tax is taken from a quick sell.
+const QS_BASE: Record<number, number> = {
+  99: 12_078, 98: 11_956, 97: 11_834, 96: 11_712, 95: 11_590, 94: 11_468, 93: 11_346, 92: 11_224, 91: 646, 90: 638, 89: 630, 88: 622, 87: 618, 86: 611,
+  85: 604, 84: 596, 83: 589, 82: 582, 81: 575, 80: 568, 79: 561, 78: 554, 77: 547, 76: 540, 75: 533, 74: 259, 73: 255, 72: 251, 71: 247, 70: 243, 69: 240,
+  68: 237, 67: 234, 66: 231, 65: 228, 64: 48, 63: 46, 62: 46, 61: 45, 60: 44, 59: 43, 58: 42, 57: 41, 56: 40, 55: 39, 54: 38, 53: 37, 52: 36, 51: 35,
+  50: 34, 49: 33, 48: 32, 47: 31, 46: 30, 45: 30, 44: 29, 43: 29, 42: 28, 41: 28, 40: 28,
+};
+/** The FC 27 quick sell value of a base player card of this rating, or null when the rating is unknown. */
+export function quickSellValue(rating: number | null | undefined): number | null {
+  if (rating == null || !Number.isFinite(rating)) return null;
+  return QS_BASE[clamp(Math.round(rating), 40, 99)] ?? null;
+}
+
+export interface QuickSellCall { value: number; at_least: boolean; list_at: number; list_net: number; expected: number; quicksell: boolean; why: string }
+
+/**
+ * Quick sell or list? Listing pays the price after EA's 5% tax, but only if it sells: cards near the bottom of the
+ * market sit unsold among hundreds of copies, a card that already expired once is less likely to go, and a falling
+ * price takes more off. Quick selling pays its fixed value straight away, with no tax and no transfer list slot.
+ * Flags "quick sell" when it pays at least 90% of what listing is expected to bring.
+ */
+export function quickSellCall(o: { rating: number | null; special?: boolean; exact?: number | null; price: number | null; failed?: boolean; change_72h?: number | null }): QuickSellCall | null {
+  const value = o.exact && o.exact > 0 ? o.exact : quickSellValue(o.rating);
+  if (!value || !o.price || o.price <= 0) return null;
+  const at_least = !(o.exact && o.exact > 0) && !!o.special;
+  const list_at = near(Math.max(RULES.min_price, o.price)), list_net = net(list_at);
+  const cheap = list_at <= Math.max(1000, value * 2);
+  let chance = 0.9;
+  if (cheap) chance -= 0.2;
+  if (o.failed) chance -= 0.2;
+  const fall = o.change_72h != null && o.change_72h < 0 ? Math.min(0.3, Math.abs(o.change_72h) / 200) : 0;
+  const expected = Math.round(list_net * chance * (1 - fall));
+  const quicksell = value >= expected * 0.9;
+  const v = `${at_least ? "at least " : ""}${c(value)}`;
+  const reasons = [o.failed ? "it already didn't sell once" : null, cheap ? "cards this cheap often sit unsold" : null, fall ? `its price fell ${Math.abs(o.change_72h!)}% in 3 days` : null].filter(Boolean);
+  const why = quicksell
+    ? `Quick sell it for ${v} coins now. Listing at ${c(list_at)} gets ${c(list_net)} after the 5% tax only if it sells${reasons.length ? `, and ${reasons.join(" and ")}` : ""}.`
+    : `List it: ${c(list_at)} gets ${c(list_net)} after tax, well over the ${v} quick sell value.`;
+  return { value, at_least, list_at, list_net, expected, quicksell, why };
+}
+
+export interface QuickSellPick { card_id: string; ea_item_id: number | null; name: string; rating: number | null; version: string | null; quantity: number; quick_sell: number; at_least: boolean; list_at: number; list_net: number; total: number; why: string }
+
+/** Tradeable club cards (not in the active squad) worth more as a quick sell than as a listing, biggest total first. */
+export function quickSells(club: ClubCard[], stats: Map<number, CardStats>, squad: Set<string>): QuickSellPick[] {
+  const out: QuickSellPick[] = [];
+  for (const card of club) {
+    if (card.tradeable_quantity <= 0 || squad.has(card.card_id)) continue;
+    const s = card.ea_item_id ? stats.get(card.ea_item_id) : undefined;
+    const price = s && s.latest_age_h <= 13 ? s.latest : card.price;
+    const kind = cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false });
+    const call = quickSellCall({ rating: card.rating, special: kind === "promo", price, change_72h: s?.change_72h ?? null });
+    if (!call?.quicksell) continue;
+    out.push({ card_id: card.card_id, ea_item_id: card.ea_item_id, name: card.name, rating: card.rating, version: card.version, quantity: card.tradeable_quantity, quick_sell: call.value, at_least: call.at_least,
+      list_at: call.list_at, list_net: call.list_net, total: call.value * card.tradeable_quantity, why: call.why });
+  }
+  return out.sort((a, b) => b.total - a.total);
 }
 
 /** How earlier days' buy picks did: a pick "hit" when a later refresh reached its sell price. */
@@ -393,12 +501,17 @@ export function buildStrategy(raw: StrategyInput) {
   const moves72 = input.series.cards.flatMap((card) => { const s = stats.get(card.ea_item_id); return card.tracked && s && s.change_72h !== null && s.latest_age_h <= 13 ? [s.change_72h] : []; });
   const m24 = moves.length >= 50 ? Math.round(median(moves) * 10) / 10 : null, m72 = moves72.length >= 50 ? Math.round(median(moves72) * 10) / 10 : null;
   const mood = m24 === null ? "unknown" : m24 <= -2 ? "falling" : m24 >= 2 ? "rising" : "steady";
-  const moodBuy = mood === "falling" ? 0.3 : mood === "rising" ? -0.3 : 0;
+  // A falling market means buy less, not more: cards bought into a slide mostly kept sliding (2026-11-17 review).
+  const moodBuy = mood === "falling" ? -0.4 : mood === "rising" ? 0.2 : 0;
   const tilt = clamp(timing.buy_bias + moodBuy - timing.sell_bias, -2, 2);
   const stance = tilt >= 0.75 ? "buy" : tilt <= -0.75 ? "sell" : "flip";
 
+  // Which way of picking buys has really made money lately (replayRules), and the market move to judge cards against.
+  const picking = chooseRule(input.rules ?? input.model?.rules);
+  const market = marketMove(stats, byEa);
+
   // Budget: keep a reserve, split the rest over a few cards so one bad pick can't sink the day.
-  const reserve_pct = clamp(risk.reserve + timing.extra_reserve + (stance === "sell" ? 0.15 : 0) - (stance === "buy" ? 0.05 : 0), 0.05, 0.7);
+  const reserve_pct = clamp(risk.reserve + timing.extra_reserve + (stance === "sell" ? 0.15 : 0) - (stance === "buy" ? 0.05 : 0) + (picking.hold ? 0.2 : 0), 0.05, 0.8);
   const coins = input.coins;
   const reserve = coins === null ? null : Math.round(coins * reserve_pct);
   const spend = coins === null ? null : coins - reserve!;
@@ -407,13 +520,14 @@ export function buildStrategy(raw: StrategyInput) {
   const free_slots = Math.max(0, max_slots - used_slots);
 
   const owned = new Set((input.club ?? []).flatMap((x) => (x.ea_item_id ? [x.ea_item_id] : [])));
+  const pickOpts = { rule: picking.rule, market, rise: picking.rise };
   const candidates = scoreBuys([...stats].flatMap(([ea, s]) => { const card = byEa.get(ea); return card ? [{ card, stats: s }] : []; }), timing, {
-    max_price: per_pick !== null && per_pick >= 1000 ? per_pick : 15_000_000, min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh,
+    max_price: per_pick !== null && per_pick >= 1000 ? per_pick : 15_000_000, min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, ...pickOpts,
   });
   const buys: BuyPick[] = [], seenPlayer = new Set<string>();
   let left = spend ?? 0, slots = free_slots;
   for (const p of candidates) {
-    if (buys.length >= risk.picks) break;
+    if (buys.length >= (picking.hold ? Math.min(2, risk.picks) : risk.picks)) break;
     const player = `${p.name}|${p.rating}`;
     if (seenPlayer.has(player)) continue;
     if (spend !== null) {
@@ -426,27 +540,33 @@ export function buildStrategy(raw: StrategyInput) {
     seenPlayer.add(player);
     buys.push(p);
   }
-  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys });
+  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys, ...pickOpts });
   const watch = candidates.filter((p) => !buys.includes(p) && !seenPlayer.has(`${p.name}|${p.rating}`)).slice(0, 8);
 
   const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids, input.model).slice(0, stance === "sell" ? 10 : 6) : [];
   const names = new Map<number, string>([...byEa].map(([k, v]) => [k, v.name]));
   for (const x of input.club ?? []) if (x.ea_item_id) names.set(x.ea_item_id, x.name);
   const pile = input.tradepile ? pileFixes(input.tradepile, stats, names) : [];
+  // Cards a seller would be told to list are left out: the sell list already covers them.
+  const listing = new Set(sells.map((x) => x.card_id));
+  const quick = input.club ? quickSells(input.club.filter((x) => !listing.has(x.card_id)), stats, input.squad_card_ids) : [];
   const record = scorePast(input.past, byEa, input.series.latest);
 
   const buySpend = buys.reduce((n, b) => n + (b.spend ?? 0), 0), buyProfit = buys.reduce((n, b) => n + (b.total_profit ?? 0), 0);
   const sellValue = sells.reduce((n, s) => n + s.after_tax, 0);
-  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action !== "clear");
+  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action === "relist" || p.action === "lower"), pileQs = pile.filter((p) => p.action === "quicksell");
   const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n, i) => n + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
 
   // Today's steps, in the order to do them.
   const steps: string[] = [];
   if (sold.length) steps.push(`Clear ${sold.length} sold item${sold.length === 1 ? "" : "s"} on your transfer list to collect the coins.`);
+  if (pileQs.length) steps.push(`Quick sell ${pileQs.length} unsold item${pileQs.length === 1 ? "" : "s"} on your transfer list (about ${c(pileQs.reduce((n, p) => n + (p.quick_sell ?? 0), 0))} coins): they're worth more that way than relisted.`);
+  if (quick.length) steps.push(`Quick sell ${quick.length === 1 ? quick[0]!.name : `${quick.length} cards you don't use`} for about ${c(quick.reduce((n, q) => n + q.total, 0))} coins: listing ${quick.length === 1 ? "it" : "them"} would bring in less after tax (see Quick sell instead).`);
   if (relist.length) steps.push(`Relist ${relist.length} item${relist.length === 1 ? "" : "s"} at today's price (see Transfer list).`);
   if (sells.length) steps.push(`${timing.sell_bias > 0 ? "List now" : "List when it suits you"}: ${sells.slice(0, 3).map((s) => s.name).join(", ")}${sells.length > 3 ? ` and ${sells.length - 3} more` : ""}, about ${c(sellValue)} coins after tax.`);
   if (buys.length) steps.push(`${timing.buy_bias < 0 ? "Wait for the dip, then buy" : "Buy"} ${buys.length} card${buys.length === 1 ? "" : "s"}${buySpend ? ` for about ${c(buySpend)} coins` : ""}, and list each at its sell price straight away${buyProfit ? ` (about ${c(buyProfit)} profit after tax if they all sell)` : ""}.`);
   if (reserve !== null) steps.push(`Keep ${c(reserve)} coins (${Math.round(reserve_pct * 100)}%) back${timing.extra_reserve > 0 ? " for the drop ahead" : " for surprises"}.`);
+  if (picking.hold) steps.unshift(picking.why);
   if (coins === null) steps.push("Open the EA Web App with the XI Lab helper running (or enter your coins) so the plan can size each buy.");
 
   const moodText = m24 === null ? "Not enough price history yet to read the market." : `The market is ${mood === "steady" ? "steady" : mood} (middle card ${m24 > 0 ? "+" : ""}${m24}% in 24 hours${m72 !== null ? `, ${m72 > 0 ? "+" : ""}${m72}% in 3 days` : ""}).`;
@@ -464,11 +584,13 @@ export function buildStrategy(raw: StrategyInput) {
     as_of: new Date(input.now).toISOString(), uk_date: ukClock(input.now).date, prices_at: input.series.latest,
     headline: `${stanceText} ${moodText}`,
     stance, mood: { label: mood, median_24h: m24, median_72h: m72, cards: moves.length },
+    picking: { rule: picking.rule, name: RULE_LABEL[picking.rule].name, detail: RULE_LABEL[picking.rule].detail, why: picking.why, hold: picking.hold,
+      replay: picking.replay ? { ...picking.replay, rules: picking.replay.rules.map((r) => ({ ...r, name: RULE_LABEL[r.rule].name, detail: RULE_LABEL[r.rule].detail })) } : null },
     timing,
     prices: priceFreshness(raw.series.latest, lived.live_at, raw.live === undefined ? null : !!raw.live, input.now),
     budget: { coins, coins_source: input.coins_source, coins_at: input.coins_at, reserve_pct: Math.round(reserve_pct * 100), reserve, spend, per_pick, buy_spend: buySpend, expected_profit: buyProfit, free_slots, risk: input.risk ?? "normal" },
     move: bestMove({ buys, sells, pile, stance, timing, coins, sold_coins: soldCoins, prices_at: input.series.latest, now: input.now, stale: !lived.live_at && !!input.series.latest && input.now - Date.parse(input.series.latest) > 3 * 3_600_000 }),
-    ranges, steps, buys, watch, sells, transfer_list: pile, record, learning: learningSummary(input.model, input.followed ?? []), notes, verified: false as const,
+    ranges, steps, buys, watch, sells, quick_sells: quick.slice(0, 12), transfer_list: pile, record, learning: learningSummary(input.model, input.followed ?? []), notes, verified: false as const,
   };
 }
 export type Strategy = ReturnType<typeof buildStrategy>;
@@ -487,8 +609,8 @@ export interface RangePick { key: (typeof PRICE_RANGES)[number]["key"]; label: s
  * price rec, and high price recs"), whatever the budget, ranked like the plan's picks. Sized to the coins when known;
  * `affordable` is false when one copy is more than the plan would put into a single card.
  */
-export function priceRanges(stats: Map<number, CardStats>, byEa: Map<number, SeriesCard>, timing: Timing, o: { min_roi: number; owned: Set<number>; model?: StrategyModel | null; fresh: Set<number> | null; per_pick: number | null; cap_slots: number; taken: BuyPick[] }): RangePick[] {
-  const all = scoreBuys([...stats].flatMap(([ea, st]) => { const card = byEa.get(ea); return card ? [{ card, stats: st }] : []; }), timing, { max_price: 15_000_000, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh });
+export function priceRanges(stats: Map<number, CardStats>, byEa: Map<number, SeriesCard>, timing: Timing, o: { min_roi: number; owned: Set<number>; model?: StrategyModel | null; fresh: Set<number> | null; per_pick: number | null; cap_slots: number; taken: BuyPick[]; rule?: BuyRule; market?: MarketMove | null; rise?: number | null }): RangePick[] {
+  const all = scoreBuys([...stats].flatMap(([ea, st]) => { const card = byEa.get(ea); return card ? [{ card, stats: st }] : []; }), timing, { max_price: 15_000_000, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh, rule: o.rule, market: o.market, rise: o.rise });
   const taken = new Map(o.taken.map((b) => [b.ea_item_id, b]));
   return PRICE_RANGES.map((r) => {
     const seen = new Set<string>();
@@ -571,7 +693,7 @@ export function bestMove(o: { buys: BuyPick[]; sells: SellPick[]; pile: PileFix[
       title: `Buy ${qty > 1 ? `${qty}x ` : ""}${buy.name} (${buy.rating}) at ${c(buy.buy_at)}, list at ${c(buy.sell_at)}`,
       detail: `${when}It's ${Math.round(((buy.median - buy.price) / buy.median) * 100)}% under its usual price. If ${qty > 1 ? "they all sell" : "it sells"}, that's ${c(profit)} profit after tax, usually within ${buy.hold}. ${odds}. Don't pay more than ${c(buy.max_buy)}: above that it isn't worth it after tax.${o.stale ? " These prices are old, so check the Buy Now price in the game first." : ""}${buy.quantity === null ? " Your coins aren't known, so buy as many as you can afford." : ""}` };
   }
-  const relist = o.pile.filter((p) => p.action !== "clear");
+  const relist = o.pile.filter((p) => p.action === "relist" || p.action === "lower");
   if (relist.length) return { ...base, kind: "relist", first, ea_item_id: relist[0]!.ea_item_id, name: relist[0]!.name, coins: null, chance: null,
     title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`, detail: `Start with ${relist[0]!.name}: ${relist[0]!.why} Coins sitting in unsold cards can't make more coins.` };
   return { ...base, kind: "wait", first, ea_item_id: null, name: null, coins: null, chance: null,
@@ -653,10 +775,13 @@ export async function dailyStrategy(db: FutDb, userId: string, platform: "consol
     if (moves) model = model ? { ...model, moves, lessons: learnModel(platform, [], now, moves).lessons } : learnModel(platform, [], now, moves);
   }
 
+  // Before the learning job has replayed the picking rules, replay them on this week's prices here.
+  const rules = model?.rules ?? (series.latest ? replayRules(series.cards, snaps, series.latest, { max_days: 5 }) : null);
+
   const plan = buildStrategy({
     now, coins, coins_source: opts.budget != null ? "entered" : helperCoins !== null ? "helper" : null, coins_at: helperCoins !== null && opts.budget == null ? ((state?.balance_at as string | null) ?? null) : null,
     series, club: clubRows.length ? club : null, tradepile, tradepile_max: profile?.tradepile_max ?? null, squad_card_ids: squad, past, risk: opts.risk,
-    model, followed: followedTrades(past, (tradesRes.data ?? []) as Row[]), live: await livePromise,
+    model, rules, followed: followedTrades(past, (tradesRes.data ?? []) as Row[]), live: await livePromise,
   });
 
   // Keep one plan per UK day (the last one built that day), so later days can score its picks.
@@ -689,6 +814,106 @@ export function followedTrades(past: PastPlan[], trades: Row[]): FollowedTrade[]
   return out;
 }
 
+// ------------------------------------------------------------------ replay: how each picking rule really did
+
+export interface RuleResult {
+  rule: BuyRule;
+  /** Picks checked (top `top` per past refresh), and how many refreshes had a pick. */
+  n: number; refreshes: number;
+  /** Average % made 2 days later, after the 5% tax, selling at that day's price. */
+  net48: number | null;
+  /** Share that climbed 6%+ at some point in those 2 days (enough to beat the tax), and share that fell 10%+. */
+  pays: number | null; fell10: number | null;
+  /** The middle best rise within 2 days (a fair sell target for this rule). */
+  peak_mid: number | null;
+}
+export interface RuleReplay { at: string; refreshes: number; days: number; market48: number | null; rules: RuleResult[] }
+
+const REPLAY_AHEAD_H = 48, REPLAY_MIN_N = 30;
+
+/**
+ * Runs every picking rule on each stored refresh at least 2 days old, as if the plan had been built then (its week of
+ * prices only, no learning), and checks the top picks against the price 2 days later. Pure. Prices are cleaned first
+ * (cleanSeries). `snapshots` are the refresh ages in hours. Refreshes less than 10 hours apart count once.
+ */
+export function replayRules(cards: SeriesCard[], snapshots: number[], latest: string, o: { top?: number; max_days?: number } = {}): RuleReplay | null {
+  const top = o.top ?? 10, maxAge = REPLAY_AHEAD_H + 24 * (o.max_days ?? 10), latestMs = Date.parse(latest);
+  if (!Number.isFinite(latestMs)) return null;
+  const tracked = cards.filter((c) => c.tracked && cardKind(c) !== "silver_bronze").map((c) => cleanSeries(c));
+  const cuts: number[] = [];
+  for (const a of [...new Set(snapshots.map((x) => Math.round(x)))].sort((x, y) => x - y)) {
+    if (a < REPLAY_AHEAD_H || a > maxAge) continue;
+    if (cuts.length && a - cuts[cuts.length - 1]! < 10) continue;
+    cuts.push(a);
+  }
+  const acc = new Map<BuyRule, { rets: number[]; pays: number; fell: number; peaks: number[]; refreshes: number }>(BUY_RULES.map((r) => [r, { rets: [], pays: 0, fell: 0, peaks: [], refreshes: 0 }]));
+  const mkt: number[] = [];
+  let used = 0;
+  for (const a of cuts) {
+    const stats = new Map<number, CardStats>(), byEa = new Map<number, SeriesCard>(), ahead = new Map<number, { p48: number; peak: number }>();
+    for (const c of tracked) {
+      const idx = c.ages.map((x, i) => (x >= a - 0.5 && x <= a + 168 ? i : -1)).filter((i) => i >= 0);
+      if (idx.length < 6) continue;
+      const card = { ...c, prices: idx.map((i) => c.prices[i]!), ages: idx.map((i) => c.ages[i]! - a) };
+      if (card.ages[card.ages.length - 1]! > 1) continue; // no price at that refresh
+      let p48: number | null = null, gap = Infinity, peak = 0;
+      for (let i = 0; i < c.ages.length; i++) {
+        const x = c.ages[i]!;
+        if (x < a - 0.5 && x >= a - REPLAY_AHEAD_H - 0.5) peak = Math.max(peak, c.prices[i]!);
+        const g = Math.abs(x - (a - REPLAY_AHEAD_H));
+        if (g < gap && g <= 6) { gap = g; p48 = c.prices[i]!; }
+      }
+      if (p48 === null) continue;
+      const st = cardStats(card, Math.min(168, card.ages[0]!));
+      if (!st) continue;
+      stats.set(c.ea_item_id, st); byEa.set(c.ea_item_id, card); ahead.set(c.ea_item_id, { p48, peak: Math.max(peak, p48) });
+    }
+    if (stats.size < 50) continue;
+    used++;
+    const rets = [...stats].map(([ea, st]) => ahead.get(ea)!.p48 / st.latest - 1);
+    mkt.push(median(rets));
+    const market = marketMove(stats, byEa), timing = marketTiming(latestMs - a * 3_600_000);
+    const list = [...stats].map(([ea, st]) => ({ card: byEa.get(ea)!, stats: st }));
+    for (const rule of BUY_RULES) {
+      const picks = scoreBuys(list, timing, { max_price: 15_000_000, min_roi: 0.03, owned: new Set(), rule, market }).slice(0, top);
+      const r = acc.get(rule)!;
+      if (picks.length) r.refreshes++;
+      for (const pk of picks) {
+        const f = ahead.get(pk.ea_item_id)!;
+        r.rets.push(net(f.p48) / pk.buy_at - 1);
+        r.peaks.push(f.peak / pk.buy_at - 1);
+        if (f.peak >= pk.buy_at * 1.06) r.pays++;
+        if (f.p48 <= pk.buy_at * 0.9) r.fell++;
+      }
+    }
+  }
+  if (!used) return null;
+  const r1 = (v: number) => Math.round(v * 1000) / 10;
+  return {
+    at: latest, refreshes: used, days: Math.round((cuts[cuts.length - 1]! - REPLAY_AHEAD_H) / 24 * 10) / 10 || 0.5, market48: mkt.length ? r1(median(mkt)) : null,
+    rules: BUY_RULES.map((rule) => {
+      const r = acc.get(rule)!, n = r.rets.length;
+      return { rule, n, refreshes: r.refreshes, net48: n ? r1(r.rets.reduce((x, y) => x + y, 0) / n) : null, pays: n ? r1(r.pays / n) : null, fell10: n ? r1(r.fell / n) : null, peak_mid: n ? Math.round(median(r.peaks) * 1000) / 1000 : null };
+    }),
+  };
+}
+
+export interface RuleChoice { rule: BuyRule; rise: number | null; hold: boolean; why: string; replay: RuleReplay | null }
+
+/** The rule the plan uses: the one whose picks made the most 2 days later in the replay (30+ picks), else the default. */
+export function chooseRule(replay: RuleReplay | null | undefined): RuleChoice {
+  const ok = (replay?.rules ?? []).filter((r) => r.n >= REPLAY_MIN_N && r.net48 !== null).sort((x, y) => y.net48! - x.net48!);
+  const best = ok[0];
+  if (!replay || !best) return { rule: DEFAULT_RULE, rise: null, hold: false, why: `Not enough past refreshes yet to test the picking rules, so it uses "${RULE_LABEL[DEFAULT_RULE].name}".`, replay: replay ?? null };
+  const days = replay.days >= 1.5 ? `${Math.round(replay.days)} days` : "the last day or two";
+  const rise = best.peak_mid !== null && best.peak_mid > 0 ? best.peak_mid : null;
+  const hold = best.net48! < 0;
+  const why = hold
+    ? `No way of picking has made money after tax over ${days}: the best, "${RULE_LABEL[best.rule].name}", averaged ${best.net48}% 2 days later${replay.market48 !== null ? ` while the middle card moved ${replay.market48}%` : ""}. Buy less and keep coins until that turns.`
+    : `"${RULE_LABEL[best.rule].name}" did best over ${days}: its picks averaged ${best.net48! > 0 ? "+" : ""}${best.net48}% after tax 2 days later, ${best.pays}% climbed enough to beat the tax and ${best.fell10}% fell 10% or more.`;
+  return { rule: best.rule, rise, hold, why, replay };
+}
+
 // ------------------------------------------------------------------ learning job (bot scheduler, after each refresh)
 
 const LOG_BUYS = 80, LOG_SELLS = 40;
@@ -718,6 +943,8 @@ export async function runStrategyLearning(db: FutDb, now = Date.now()) {
     if (!latest) { out[platform] = { skipped: "no prices" }; continue; }
     const cards = (arr<SeriesCard>(d.cards) ?? []).map((c) => cleanSeries(c)), snaps = arr<number>(d.snapshots) ?? [];
     const byEa = new Map(cards.map((c) => [c.ea_item_id, c]));
+    // How each picking rule did on the stored refreshes; the log and the plan use the best one.
+    const replay = replayRules(cards, snaps, latest), choice = chooseRule(replay);
 
     // 1. Settle earlier picks
     const settled = openRows.flatMap((r) => {
@@ -741,7 +968,7 @@ export async function runStrategyLearning(db: FutDb, now = Date.now()) {
         if (s) stats.set(c.ea_item_id, s);
       }
       const timing = marketTiming(Date.parse(latest));
-      const buys = scoreBuys([...stats].flatMap(([ea, s]) => { const card = byEa.get(ea); return card ? [{ card, stats: s }] : []; }), timing, { max_price: 15_000_000, min_roi: 0.03, owned: new Set() }).slice(0, LOG_BUYS);
+      const buys = scoreBuys([...stats].flatMap(([ea, s]) => { const card = byEa.get(ea); return card ? [{ card, stats: s }] : []; }), timing, { max_price: 15_000_000, min_roi: 0.03, owned: new Set(), rule: choice.rule, market: marketMove(stats, byEa), rise: choice.rise }).slice(0, LOG_BUYS);
       const sells = marketSells(cards, stats, timing).slice(0, LOG_SELLS);
       const rows: LoggedPick[] = [
         ...buys.map((b, i) => ({ platform, side: "buy" as const, ea_item_id: b.ea_item_id, picked_at: latest, rank: i + 1, price: b.buy_at, target: b.target_raw, features: b.features })),
@@ -764,10 +991,10 @@ export async function runStrategyLearning(db: FutDb, now = Date.now()) {
     }
     // Every stored price move teaches something now, without waiting for picks to settle.
     const moves = learnMoves(cards.filter((c) => c.tracked).map((c) => ({ prices: c.prices, ages: c.ages, kind: cardKind(c) })));
-    const model = learnModel(platform, results, now, moves);
+    const model = { ...learnModel(platform, results, now, moves), rules: replay };
     fail((await db.from("strategy_model").upsert({ platform, model, updated_at: model.updated_at }, { onConflict: "platform" })).error);
     fail((await db.from("strategy_pick_log").delete().eq("platform", platform).lt("picked_at", new Date(now - 90 * 86_400_000).toISOString())).error);
-    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate, moves: moves?.n ?? 0 };
+    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate, moves: moves?.n ?? 0, rule: choice.rule, hold: choice.hold };
   }
   return out;
 }

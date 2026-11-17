@@ -129,7 +129,9 @@ export type StrategyRisk = "careful" | "normal" | "bold";
 export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[]; target_raw?: number; p_hit?: number | null; max_buy?: number; forecast?: StrategyForecast | null }
 export interface StrategyForecast { low: number; mid: number; high: number; up: number; n: number }
 export interface StrategySell { card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null; quantity: number; list_at: number; quick_at: number; after_tax: number; median: number | null; high: number | null; change_24h: number | null; reason: string; why: string; in_squad: boolean; forecast?: StrategyForecast | null }
-export interface StrategyPileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
+export interface StrategyPileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "quicksell" | "relist" | "lower"; list_at: number | null; why: string; quick_sell?: number | null }
+/** A club card worth more quick sold than listed (after the 5% tax and the chance it doesn't sell). */
+export interface StrategyQuickSell { card_id: string; ea_item_id: number | null; name: string; rating: number | null; version: string | null; quantity: number; quick_sell: number; at_least: boolean; list_at: number; list_net: number; total: number; why: string }
 export interface StrategyRecordItem { plan_date: string; name: string; buy_at: number; sell_at: number; best: number | null; now: number | null; outcome: "hit" | "open_up" | "open_down" | "too_soon" | "unknown"; now_pct: number | null }
 export interface StrategyMove {
   kind: "buy" | "sell" | "relist" | "wait"; title: string; detail: string; coins: number | null; chance: number | null;
@@ -137,9 +139,13 @@ export interface StrategyMove {
 }
 export interface StrategyRange { key: "low" | "medium" | "high"; label: string; sub: string; pick: StrategyBuy | null; affordable: boolean | null; others: StrategyBuy[] }
 export interface StrategyPrices { at: string | null; refresh_at: string | null; source: "live" | "refresh"; age_h: number | null; note: string }
+export interface StrategyRuleResult { rule: string; name: string; detail: string; n: number; refreshes: number; net48: number | null; pays: number | null; fell10: number | null; peak_mid: number | null }
+/** Which way of picking buys the plan uses, and how every way did 2 days later on past refreshes. */
+export interface StrategyPicking { rule: string; name: string; detail: string; why: string; hold: boolean; replay: { at: string; refreshes: number; days: number; market48: number | null; rules: StrategyRuleResult[] } | null }
 export interface DailyStrategy {
   platform: MarketPlatform; as_of: string; uk_date: string; prices_at: string | null; headline: string; stance: "buy" | "sell" | "flip";
   mood: { label: string; median_24h: number | null; median_72h: number | null; cards: number };
+  picking?: StrategyPicking;
   timing: { uk_time: string; weekday: string; buy_bias: number; sell_bias: number; extra_reserve: number; now: string; next: string | null; events: { name: string; date: string; days: number; advice: string }[]; daily: string };
   budget: { coins: number | null; coins_source: "helper" | "entered" | null; coins_at: string | null; reserve_pct: number; reserve: number | null; spend: number | null; per_pick: number | null; buy_spend: number; expected_profit: number; free_slots: number; risk: StrategyRisk };
   /** The one best move to make coins right now, recomputed with every price update. */
@@ -148,7 +154,7 @@ export interface DailyStrategy {
   ranges?: StrategyRange[];
   /** Where the prices came from and how old they are. */
   prices?: StrategyPrices;
-  steps: string[]; buys: StrategyBuy[]; watch: StrategyBuy[]; sells: StrategySell[]; transfer_list: StrategyPileFix[];
+  steps: string[]; buys: StrategyBuy[]; watch: StrategyBuy[]; sells: StrategySell[]; quick_sells?: StrategyQuickSell[]; transfer_list: StrategyPileFix[];
   record: { days: number; picks: number; hit: number; open_up: number; open_down: number; avg_now_pct: number | null; items: StrategyRecordItem[] };
   learning?: {
     ready: boolean; updated_at: string | null; buy_picks: number; buy_hit_rate: number | null; hours_to_hit: number | null; target_reach: number;

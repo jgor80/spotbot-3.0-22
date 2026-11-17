@@ -13,6 +13,7 @@
 //     peak short of them;
 //   - how long hits took to sell, and how often each kind of sell signal was right.
 // Everything here is pure so it can be tested. Prices are FUT.GG estimates, so the model is an estimate too.
+import type { RuleReplay } from "./strategy.ts";
 
 export const HORIZON_H = 96;          // a pick has 4 days to reach its target
 export const WINDOW_DAYS = 30;        // the model learns from the last 30 days of results
@@ -253,6 +254,8 @@ export interface StrategyModel {
   lessons: string[];
   /** How prices moved after every stored refresh (learnMoves); used until enough real picks have settled. */
   moves?: MoveModel | null;
+  /** How each picking rule's picks did 2 days later on the stored refreshes (strategy.ts replayRules). */
+  rules?: RuleReplay | null;
 }
 
 const quantile = (xs: number[], q: number) => {
