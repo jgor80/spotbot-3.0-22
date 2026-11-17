@@ -215,6 +215,14 @@ function Plan({ d }: { d: DailyStrategy }) {
         <p className="text-sm text-muted-foreground">Nothing in your club stands out to sell today. Sync your club with the XI Lab helper (My Cards) so the plan can see your tradeable cards.</p>}
     </Section>
 
+    {(d.quick_sells?.length ?? 0) > 0 && <Section title="Quick sell instead">
+      <p className="text-sm text-muted-foreground">Cards you don't use where quick selling pays more than listing. Listing pays the price after EA's 5% tax, and only if it sells; quick selling pays straight away with no tax. Quick sell values are FC 27's published values for base cards (special cards get at least that), so check the number in the game.</p>
+      <div className="overflow-x-auto"><DataTable headers={["Card", "Copies", "Quick sell", "Listing gets", "Why"]} rows={d.quick_sells!.map(q => [
+        <span className="font-medium">{q.name}{q.rating ? <span className="ml-1 text-xs text-muted-foreground">{q.rating}</span> : null}</span>, q.quantity,
+        <span className="tabular-nums text-success">{q.at_least ? "≥ " : ""}{numberText(q.quick_sell)}</span>, <span className="tabular-nums">{numberText(q.list_net)} if it sells</span>, <span className="text-sm">{q.why}</span>,
+      ])} /></div>
+    </Section>}
+
     {d.transfer_list.length > 0 && <Section title="Transfer list">
       <div className="overflow-x-auto"><DataTable headers={["Card", "Status", "Listed at", "Market", "Do this"]} rows={d.transfer_list.map(f => [
         <span className="font-medium">{f.name}{f.rating ? <span className="ml-1 text-xs text-muted-foreground">{f.rating}</span> : null}</span>, f.state, coins(f.buy_now), coins(f.price), <span className="text-sm">{f.why}</span>,

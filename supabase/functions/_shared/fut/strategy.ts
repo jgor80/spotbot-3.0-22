@@ -186,7 +186,7 @@ export function marketTiming(now: number): Timing {
 // ------------------------------------------------------------------ the plan
 
 export interface ClubCard { card_id: string; ea_item_id: number | null; name: string; version: string | null; rating: number | null; position: string | null; tradeable_quantity: number; price: number | null }
-export interface PileItem { ea_item_id: number; state: string; buy_now: number | null; current_bid: number | null; untradeable: boolean; rating: number | null }
+export interface PileItem { ea_item_id: number; state: string; buy_now: number | null; current_bid: number | null; untradeable: boolean; rating: number | null; rare_flag?: number | null; discard_value?: number | null }
 export interface PastPlan { plan_date: string; prices_at: string | null; buys: { ea_item_id: number; name: string; buy_at: number; sell_at: number }[] }
 
 export interface StrategyInput {
@@ -232,7 +232,7 @@ export interface SellPick {
   right_rate: number | null;
   forecast: Forecast | null;
 }
-export interface PileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
+export interface PileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "quicksell" | "relist" | "lower"; list_at: number | null; why: string; quick_sell?: number | null }
 
 const RISK = { careful: { reserve: 0.35, picks: 4, cap: 0.2, min_roi: 0.05 }, normal: { reserve: 0.2, picks: 6, cap: 0.3, min_roi: 0.03 }, bold: { reserve: 0.1, picks: 8, cap: 0.4, min_roi: 0.02 } };
 const MIN_PROFIT = 150;
@@ -393,12 +393,77 @@ export function pileFixes(items: PileItem[], stats: Map<number, CardStats>, name
   for (const i of items) {
     const s = stats.get(i.ea_item_id), price = s && s.latest_age_h <= 13 ? s.latest : null;
     const name = names.get(i.ea_item_id) ?? `Item ${i.ea_item_id}`;
+    const stuck = (i.state === "expired" || i.state === "unlisted") && !i.untradeable;
+    const qs = stuck ? quickSellCall({ rating: i.rating, special: (i.rare_flag ?? 0) > 1, exact: i.discard_value ?? null, price: price ?? i.buy_now, failed: i.state === "expired", change_72h: s?.change_72h ?? null }) : null;
     if (i.state === "sold") out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "clear", list_at: null, why: `Sold for ${c(i.current_bid ?? i.buy_now ?? 0)}. Clear it to collect the coins and free the slot.` });
-    else if ((i.state === "expired" || i.state === "unlisted") && !i.untradeable) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
+    else if (qs?.quicksell) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "quicksell", list_at: null, why: qs.why, quick_sell: qs.value });
+    else if (stuck) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
     else if (i.state === "listed" && price && i.buy_now && i.buy_now > price * 1.1) out.push({ ea_item_id: i.ea_item_id, name, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "lower", list_at: near(price), why: `Listed at ${c(i.buy_now)}, ${pct(i.buy_now / price - 1)}% above the market. When it expires, relist at ${c(near(price))}.` });
   }
-  const order = { clear: 0, relist: 1, lower: 2 };
+  const order = { clear: 0, quicksell: 1, relist: 2, lower: 3 };
   return out.sort((a, b) => order[a.action] - order[b.action] || (b.price ?? 0) - (a.price ?? 0));
+}
+
+// ------------------------------------------------------------------ quick sell or list? (Jeff, 2026-11-17)
+
+// FC 27 quick sell values of base player cards by overall rating, 40 to 99 (fifauteam.com "FC 27 discard prices",
+// 2026-09). TOTW, promo, hero and icon cards quick sell for at least this. No tax is taken from a quick sell.
+const QS_BASE: Record<number, number> = {
+  99: 12_078, 98: 11_956, 97: 11_834, 96: 11_712, 95: 11_590, 94: 11_468, 93: 11_346, 92: 11_224, 91: 646, 90: 638, 89: 630, 88: 622, 87: 618, 86: 611,
+  85: 604, 84: 596, 83: 589, 82: 582, 81: 575, 80: 568, 79: 561, 78: 554, 77: 547, 76: 540, 75: 533, 74: 259, 73: 255, 72: 251, 71: 247, 70: 243, 69: 240,
+  68: 237, 67: 234, 66: 231, 65: 228, 64: 48, 63: 46, 62: 46, 61: 45, 60: 44, 59: 43, 58: 42, 57: 41, 56: 40, 55: 39, 54: 38, 53: 37, 52: 36, 51: 35,
+  50: 34, 49: 33, 48: 32, 47: 31, 46: 30, 45: 30, 44: 29, 43: 29, 42: 28, 41: 28, 40: 28,
+};
+/** The FC 27 quick sell value of a base player card of this rating, or null when the rating is unknown. */
+export function quickSellValue(rating: number | null | undefined): number | null {
+  if (rating == null || !Number.isFinite(rating)) return null;
+  return QS_BASE[clamp(Math.round(rating), 40, 99)] ?? null;
+}
+
+export interface QuickSellCall { value: number; at_least: boolean; list_at: number; list_net: number; expected: number; quicksell: boolean; why: string }
+
+/**
+ * Quick sell or list? Listing pays the price after EA's 5% tax, but only if it sells: cards near the bottom of the
+ * market sit unsold among hundreds of copies, a card that already expired once is less likely to go, and a falling
+ * price takes more off. Quick selling pays its fixed value straight away, with no tax and no transfer list slot.
+ * Flags "quick sell" when it pays at least 90% of what listing is expected to bring.
+ */
+export function quickSellCall(o: { rating: number | null; special?: boolean; exact?: number | null; price: number | null; failed?: boolean; change_72h?: number | null }): QuickSellCall | null {
+  const value = o.exact && o.exact > 0 ? o.exact : quickSellValue(o.rating);
+  if (!value || !o.price || o.price <= 0) return null;
+  const at_least = !(o.exact && o.exact > 0) && !!o.special;
+  const list_at = near(Math.max(RULES.min_price, o.price)), list_net = net(list_at);
+  const cheap = list_at <= Math.max(1000, value * 2);
+  let chance = 0.9;
+  if (cheap) chance -= 0.2;
+  if (o.failed) chance -= 0.2;
+  const fall = o.change_72h != null && o.change_72h < 0 ? Math.min(0.3, Math.abs(o.change_72h) / 200) : 0;
+  const expected = Math.round(list_net * chance * (1 - fall));
+  const quicksell = value >= expected * 0.9;
+  const v = `${at_least ? "at least " : ""}${c(value)}`;
+  const reasons = [o.failed ? "it already didn't sell once" : null, cheap ? "cards this cheap often sit unsold" : null, fall ? `its price fell ${Math.abs(o.change_72h!)}% in 3 days` : null].filter(Boolean);
+  const why = quicksell
+    ? `Quick sell it for ${v} coins now. Listing at ${c(list_at)} gets ${c(list_net)} after the 5% tax only if it sells${reasons.length ? `, and ${reasons.join(" and ")}` : ""}.`
+    : `List it: ${c(list_at)} gets ${c(list_net)} after tax, well over the ${v} quick sell value.`;
+  return { value, at_least, list_at, list_net, expected, quicksell, why };
+}
+
+export interface QuickSellPick { card_id: string; ea_item_id: number | null; name: string; rating: number | null; version: string | null; quantity: number; quick_sell: number; at_least: boolean; list_at: number; list_net: number; total: number; why: string }
+
+/** Tradeable club cards (not in the active squad) worth more as a quick sell than as a listing, biggest total first. */
+export function quickSells(club: ClubCard[], stats: Map<number, CardStats>, squad: Set<string>): QuickSellPick[] {
+  const out: QuickSellPick[] = [];
+  for (const card of club) {
+    if (card.tradeable_quantity <= 0 || squad.has(card.card_id)) continue;
+    const s = card.ea_item_id ? stats.get(card.ea_item_id) : undefined;
+    const price = s && s.latest_age_h <= 13 ? s.latest : card.price;
+    const kind = cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false });
+    const call = quickSellCall({ rating: card.rating, special: kind === "promo", price, change_72h: s?.change_72h ?? null });
+    if (!call?.quicksell) continue;
+    out.push({ card_id: card.card_id, ea_item_id: card.ea_item_id, name: card.name, rating: card.rating, version: card.version, quantity: card.tradeable_quantity, quick_sell: call.value, at_least: call.at_least,
+      list_at: call.list_at, list_net: call.list_net, total: call.value * card.tradeable_quantity, why: call.why });
+  }
+  return out.sort((a, b) => b.total - a.total);
 }
 
 /** How earlier days' buy picks did: a pick "hit" when a later refresh reached its sell price. */
@@ -482,16 +547,21 @@ export function buildStrategy(raw: StrategyInput) {
   const names = new Map<number, string>([...byEa].map(([k, v]) => [k, v.name]));
   for (const x of input.club ?? []) if (x.ea_item_id) names.set(x.ea_item_id, x.name);
   const pile = input.tradepile ? pileFixes(input.tradepile, stats, names) : [];
+  // Cards a seller would be told to list are left out: the sell list already covers them.
+  const listing = new Set(sells.map((x) => x.card_id));
+  const quick = input.club ? quickSells(input.club.filter((x) => !listing.has(x.card_id)), stats, input.squad_card_ids) : [];
   const record = scorePast(input.past, byEa, input.series.latest);
 
   const buySpend = buys.reduce((n, b) => n + (b.spend ?? 0), 0), buyProfit = buys.reduce((n, b) => n + (b.total_profit ?? 0), 0);
   const sellValue = sells.reduce((n, s) => n + s.after_tax, 0);
-  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action !== "clear");
+  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action === "relist" || p.action === "lower"), pileQs = pile.filter((p) => p.action === "quicksell");
   const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n, i) => n + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
 
   // Today's steps, in the order to do them.
   const steps: string[] = [];
   if (sold.length) steps.push(`Clear ${sold.length} sold item${sold.length === 1 ? "" : "s"} on your transfer list to collect the coins.`);
+  if (pileQs.length) steps.push(`Quick sell ${pileQs.length} unsold item${pileQs.length === 1 ? "" : "s"} on your transfer list (about ${c(pileQs.reduce((n, p) => n + (p.quick_sell ?? 0), 0))} coins): they're worth more that way than relisted.`);
+  if (quick.length) steps.push(`Quick sell ${quick.length === 1 ? quick[0]!.name : `${quick.length} cards you don't use`} for about ${c(quick.reduce((n, q) => n + q.total, 0))} coins: listing ${quick.length === 1 ? "it" : "them"} would bring in less after tax (see Quick sell instead).`);
   if (relist.length) steps.push(`Relist ${relist.length} item${relist.length === 1 ? "" : "s"} at today's price (see Transfer list).`);
   if (sells.length) steps.push(`${timing.sell_bias > 0 ? "List now" : "List when it suits you"}: ${sells.slice(0, 3).map((s) => s.name).join(", ")}${sells.length > 3 ? ` and ${sells.length - 3} more` : ""}, about ${c(sellValue)} coins after tax.`);
   if (buys.length) steps.push(`${timing.buy_bias < 0 ? "Wait for the dip, then buy" : "Buy"} ${buys.length} card${buys.length === 1 ? "" : "s"}${buySpend ? ` for about ${c(buySpend)} coins` : ""}, and list each at its sell price straight away${buyProfit ? ` (about ${c(buyProfit)} profit after tax if they all sell)` : ""}.`);
@@ -520,7 +590,7 @@ export function buildStrategy(raw: StrategyInput) {
     prices: priceFreshness(raw.series.latest, lived.live_at, raw.live === undefined ? null : !!raw.live, input.now),
     budget: { coins, coins_source: input.coins_source, coins_at: input.coins_at, reserve_pct: Math.round(reserve_pct * 100), reserve, spend, per_pick, buy_spend: buySpend, expected_profit: buyProfit, free_slots, risk: input.risk ?? "normal" },
     move: bestMove({ buys, sells, pile, stance, timing, coins, sold_coins: soldCoins, prices_at: input.series.latest, now: input.now, stale: !lived.live_at && !!input.series.latest && input.now - Date.parse(input.series.latest) > 3 * 3_600_000 }),
-    ranges, steps, buys, watch, sells, transfer_list: pile, record, learning: learningSummary(input.model, input.followed ?? []), notes, verified: false as const,
+    ranges, steps, buys, watch, sells, quick_sells: quick.slice(0, 12), transfer_list: pile, record, learning: learningSummary(input.model, input.followed ?? []), notes, verified: false as const,
   };
 }
 export type Strategy = ReturnType<typeof buildStrategy>;
@@ -623,7 +693,7 @@ export function bestMove(o: { buys: BuyPick[]; sells: SellPick[]; pile: PileFix[
       title: `Buy ${qty > 1 ? `${qty}x ` : ""}${buy.name} (${buy.rating}) at ${c(buy.buy_at)}, list at ${c(buy.sell_at)}`,
       detail: `${when}It's ${Math.round(((buy.median - buy.price) / buy.median) * 100)}% under its usual price. If ${qty > 1 ? "they all sell" : "it sells"}, that's ${c(profit)} profit after tax, usually within ${buy.hold}. ${odds}. Don't pay more than ${c(buy.max_buy)}: above that it isn't worth it after tax.${o.stale ? " These prices are old, so check the Buy Now price in the game first." : ""}${buy.quantity === null ? " Your coins aren't known, so buy as many as you can afford." : ""}` };
   }
-  const relist = o.pile.filter((p) => p.action !== "clear");
+  const relist = o.pile.filter((p) => p.action === "relist" || p.action === "lower");
   if (relist.length) return { ...base, kind: "relist", first, ea_item_id: relist[0]!.ea_item_id, name: relist[0]!.name, coins: null, chance: null,
     title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`, detail: `Start with ${relist[0]!.name}: ${relist[0]!.why} Coins sitting in unsold cards can't make more coins.` };
   return { ...base, kind: "wait", first, ea_item_id: null, name: null, coins: null, chance: null,

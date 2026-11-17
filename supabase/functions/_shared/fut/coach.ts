@@ -82,7 +82,16 @@ export function buildCoachPlan(x: CoachInput) {
     kind: "collect", title: `Collect ${c(x.sold.coins)} coins from ${x.sold.count} sold item${x.sold.count === 1 ? "" : "s"}`, coins: x.sold.coins,
     detail: "Clear sold items on your transfer list: the coins aren't yours to spend until you do.", link: { to: "/fut/account", label: "Transfer list" },
   });
-  const relist = x.pile.filter((p) => p.action !== "clear");
+  const quick = x.pile.filter((p) => p.action === "quicksell");
+  if (quick.length) {
+    const total = quick.reduce((n, p) => n + (p.quick_sell ?? 0), 0);
+    steps.push({
+      kind: "relist", title: `Quick sell ${quick.length} unsold item${quick.length === 1 ? "" : "s"} for about ${c(total)} coins`, coins: total,
+      detail: "They're worth more quick sold than relisted: listing pays after the 5% tax and only if they sell.", link: { to: "/fut/strategy", label: "Daily Strategy" },
+      items: quick.slice(0, 5).map((p) => ({ name: p.name, rating: p.rating, coins: p.quick_sell ?? null, note: p.why })),
+    });
+  }
+  const relist = x.pile.filter((p) => p.action === "relist" || p.action === "lower");
   if (relist.length) steps.push({
     kind: "relist", title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`, coins: null,
     detail: "Coins sitting in unsold cards can't buy upgrades.", link: { to: "/fut/strategy", label: "Daily Strategy" },
