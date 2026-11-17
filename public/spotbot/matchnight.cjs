@@ -181,17 +181,44 @@ function createMatchNight(deps) {
     // pings the event's role (the signed-players role for league games) or @everyone.
     const ids = await events.onlySigned(event, tonight.ids);
     const board = await events.fetchBoardMessage(event);
-    // Matchday Programme goes up once, just before check-in opens
-    const prog = await programme.build(event, lineup).catch((err) => console.warn(`[matchnight] programme: ${err.message}`));
+    // Later games of a night: whoever is checked in for the game before stays checked in, and the
+    // post goes up without a ping (the squad is already on)
+    const carried = await carryCheckins(event);
+    // Matchday Programme goes up once, just before check-in opens (once per night)
+    const prog = carried == null ? await programme.build(event, lineup).catch((err) => console.warn(`[matchnight] programme: ${err.message}`)) : null;
     if (prog) await (board ? board.reply({ embeds: [prog], allowedMentions: { parse: [] } }) : channel.send({ embeds: [prog], allowedMentions: { parse: [] } })).catch(() => {});
+    const text = ids.length ? `🟢 Check-in is open for **${event.title}**: ${ids.map((id) => `<@${id}>`).join(' ')}` : `🟢 Check-in is open for **${event.title}**.`;
     const payload = {
       ...(await buildCheckin(event)),
-      ...(await events.pingFor(event, ids.length ? `🟢 Check-in is open for **${event.title}**: ${ids.map((id) => `<@${id}>`).join(' ')}` : `🟢 Check-in is open for **${event.title}**.`)),
+      ...(carried == null
+        ? await events.pingFor(event, text)
+        : { content: `${text}${carried ? `\n-# ${carried} carried over from the game before.` : ''}`, allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } }),
     };
     const message = board ? await board.reply(payload) : await channel.send(payload);
     const openedAt = new Date().toISOString();
     await supabase.from('availability_events').update({ checkin_message_id: message.id, checkin_opened_at: openedAt }).eq('id', event.id);
     return { ...event, checkin_message_id: message.id, checkin_opened_at: openedAt };
+  }
+
+  // For a later game of a night: copy "I'm here" / "Running late" from the game before. Returns how
+  // many were carried, or null when the event is a single game or the night's first game.
+  async function carryCheckins(event) {
+    if (!event.night_id || !events.nightGames) return null;
+    const night = await events.nightGames(event);
+    const index = night.findIndex((g) => g.id === event.id);
+    if (index <= 0) return null;
+    const before = night.slice(0, index).reverse().find((g) => !g.cancelled);
+    if (!before) return null;
+    const answers = await events.loadResponses(event.id);
+    const out = new Set(answers.filter((r) => r.response === 'no').map((r) => r.discord_user_id));
+    const rows = (await loadCheckins(before.id))
+      .filter((c) => (c.status === 'in' || c.status === 'late') && !out.has(c.discord_user_id))
+      .map((c) => ({ event_id: event.id, discord_user_id: c.discord_user_id, status: c.status, checked_in_at: new Date().toISOString() }));
+    if (rows.length) {
+      const { error } = await supabase.from('event_checkins').upsert(rows, { onConflict: 'event_id,discord_user_id', ignoreDuplicates: true });
+      if (error) return 0;
+    }
+    return rows.length;
   }
 
   async function handleCheckinButton(interaction, status, eventId) {

@@ -20,6 +20,7 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js')
 const B = require('./event-board.cjs');
 const PT = require('./position-tiers.cjs');
 const { clubAccent, crestUrl } = require('./club-colors.cjs');
+const N = require('./event-night.cjs');
 
 // "433", "4-3-3", "4-3-3 flat" -> "4-3-3 FLAT"
 function matchFormation(text) {
@@ -105,6 +106,72 @@ const EVENT_COMMANDS = [
           { name: 'positions', description: 'Ask players which position they are signing up for (on by default for tryouts).', type: 5, required: false },
           { name: 'club', description: 'Which club (only needed on servers with several).', type: 3, required: false, autocomplete: true },
           { name: 'description', description: 'Details, e.g. opponent or lobby code.', type: 3, required: false },
+        ],
+      },
+      {
+        type: 1,
+        name: 'night',
+        description: 'Post 2 to 4 games on one night (back to back or at set times), one ping for all.',
+        options: [
+          { name: 'when', description: 'First kick-off, e.g. "thu 9pm".', type: 3, required: true, autocomplete: true },
+          {
+            name: 'games',
+            description: 'How many games in a row (default 3).',
+            type: 3,
+            required: false,
+            choices: [2, 3, 4].map((n) => ({ name: `${n} games`, value: String(n) })),
+          },
+          {
+            name: 'gap',
+            description: 'Minutes from one kick-off to the next (default 30).',
+            type: 3,
+            required: false,
+            choices: N.GAP_CHOICES.map((m) => ({ name: `${m} minutes`, value: String(m) })),
+          },
+          { name: 'times', description: 'Or the later kick-offs, e.g. "21:45, 22:30" or "+40, +40". Overrides games and gap.', type: 3, required: false },
+          {
+            name: 'type',
+            description: 'Event type.',
+            type: 3,
+            required: false,
+            choices: ['league', 'friendly', 'scrim', 'training', 'tournament', 'match'].map((v) => ({ name: EVENT_TYPES[v].label, value: v })),
+          },
+          { name: 'title', description: 'Night title (each game adds "Game 1 of 3").', type: 3, required: false },
+          { name: 'formation', description: 'Formation for the lineups, e.g. 4-3-3.', type: 3, required: false, autocomplete: true },
+          { name: 'deadline', description: 'Answer by, e.g. "2h" before the first kick-off. Default 1h before.', type: 3, required: false },
+          { name: 'ping', description: 'Role to ping and remind instead of the usual ping.', type: 8, required: false },
+          {
+            name: 'notify',
+            description: 'Who the post pings. Default: signed-players role for league games, @everyone otherwise.',
+            type: 3,
+            required: false,
+            choices: [
+              { name: '@everyone', value: 'everyone' },
+              { name: 'Signed players role', value: 'signed' },
+              { name: 'No ping', value: 'none' },
+            ],
+          },
+          { name: 'channel', description: 'Where to post (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
+          { name: 'club', description: 'Which club (only needed on servers with several).', type: 3, required: false, autocomplete: true },
+          { name: 'description', description: 'Details, e.g. opponents or lobby code.', type: 3, required: false },
+        ],
+      },
+      {
+        type: 1,
+        name: 'nightlineup',
+        description: "Copy one game's lineup to the night's other games, or auto-fill each one.",
+        options: [
+          { name: 'event', description: 'A game from the night (its lineup is the one copied).', type: 3, required: true, autocomplete: true },
+          {
+            name: 'mode',
+            description: 'Copy this lineup, or auto-fill each game from its own answers.',
+            type: 3,
+            required: false,
+            choices: [
+              { name: "Copy this game's lineup", value: 'copy' },
+              { name: 'Auto-fill each game from its answers', value: 'autofill' },
+            ],
+          },
         ],
       },
       { type: 1, name: 'list', description: 'Upcoming events and recurring series.' },
@@ -368,6 +435,14 @@ function createEvents(deps) {
     return (data || []).filter((r) => r.response !== 'no_response');
   }
 
+  // Every game of the event's night, in kick-off order (just the event when it isn't part of one)
+  async function nightGames(eventOrNightId) {
+    const nightId = typeof eventOrNightId === 'string' ? eventOrNightId : eventOrNightId?.night_id;
+    if (!nightId) return typeof eventOrNightId === 'object' && eventOrNightId ? [eventOrNightId] : [];
+    const { data } = await supabase.from('availability_events').select('*').eq('night_id', nightId).order('scheduled_at', { ascending: true });
+    return data || [];
+  }
+
   // Events a leader closed to new answers, kept on the club in the saved server settings
   // (like autopilot's settings), so no extra column is needed
   async function isLocked(event) {
@@ -546,6 +621,11 @@ function createEvents(deps) {
     }
     if (event.formation) lines.push(`📐 Formation: **${event.formation}**`);
     if (event.series_id) lines.push('🔁 Repeats automatically');
+    const night = event.night_id ? await nightGames(event) : [];
+    if (night.length > 1) {
+      const n = night.findIndex((g) => g.id === event.id);
+      lines.push(`🌙 Game ${n + 1} of ${night.length} tonight: ${N.scheduleLine(night, event.id)}`);
+    }
     if (event.position_signup) lines.push(`🎯 Pick up to ${MAX_SIGNUP_POSITIONS} positions when you tap Available`);
     if (event.description) lines.push('', truncate(event.description, 600));
     lines.push('', B.availabilitySections(responses, { positions, deadline }));
@@ -588,6 +668,17 @@ function createEvents(deps) {
         );
       }
       components.push(new ActionRowBuilder().addComponents(tools));
+      // One tap answers every open game of the night (the usual answer for back-to-back games)
+      const openGames = night.filter((g) => !g.closed && !g.cancelled);
+      if (openGames.length > 1) {
+        components.push(
+          new ActionRowBuilder().addComponents(
+            Object.entries(RESPONSES).map(([key, r]) =>
+              new ButtonBuilder().setCustomId(`ev_all:${key}:${event.night_id}`).setLabel(`${r.label} for all ${openGames.length}`).setEmoji(r.emoji).setStyle(ButtonStyle.Secondary)
+            )
+          )
+        );
+      }
     }
     return { embeds: [embed], components, allowedMentions: { parse: [] } };
   }
@@ -838,6 +929,183 @@ function createEvents(deps) {
     return interaction.editReply({ content: notes.join('\n') });
   }
 
+  // ---------- Game nights (2 to 4 games, one ping) ----------
+
+  // Post every game of a night in one go: back to back (first kick-off + games + gap) or at set
+  // times. Each game gets its own board, answers, lineup, check-in and reminders; only the first
+  // board pings, and later boards, reminders, check-ins and lineups are folded into the night.
+  async function handleNight(interaction) {
+    const rec = captureOptions(interaction);
+    for (const n of ['when', 'games', 'gap', 'times', 'type', 'title', 'formation', 'deadline', 'notify', 'club', 'description']) interaction.options.getString(n);
+    interaction.options.getRole('ping');
+    interaction.options.getChannel('channel');
+    const guildId = interaction.guildId;
+    const state = await getGuildState(guildId);
+    const club = resolveClub(state, interaction.member, interaction.options.getString('club'));
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
+    if (!(await canManageClub(interaction.member, club))) {
+      return interaction.reply({ content: `❌ Only ${club.name}'s leaders can create events.`, flags: 64 });
+    }
+    const { timezone: tz } = await serverPrefs(guildId);
+
+    // "thu 9pm, 9:40pm, 10:20pm" in the kick-off box works too
+    const whenRaw = String(interaction.options.getString('when') || '').trim();
+    const [whenText, ...inline] = whenRaw.split(/\s*[,;|]\s*/);
+    if (!whenText) return interaction.reply({ content: `❌ Tell me when the first game kicks off. ${whenExamples(tz)}`, flags: 64 });
+    const first = T.parseWhen(whenText, tz);
+    if (!first) return interaction.reply(whenPicker(tz, stashWhen(interaction, 'night', rec), whenText));
+    const now = new Date();
+    if (first.getTime() < now.getTime() - 5 * 60000) {
+      return interaction.reply({ content: `❌ <t:${T.unix(first)}:F> is in the past. ${whenExamples(tz)}`, flags: 64 });
+    }
+    const times = [inline.join(', '), interaction.options.getString('times') || ''].filter(Boolean).join(', ');
+    const plan = N.planKickoffs({ first, games: interaction.options.getString('games'), gapMinutes: interaction.options.getString('gap'), times, tz });
+    if (plan.error) return interaction.reply({ content: `❌ ${plan.error}`, flags: 64 });
+    const kickoffs = plan.kickoffs;
+    const minutes = N.durations(kickoffs);
+
+    const type = interaction.options.getString('type') || (club.casual?.on ? 'friendly' : 'match');
+    const base = (interaction.options.getString('title') || `${club.name} ${typeInfo(type).label} night`).slice(0, 80);
+    const deadlineText = interaction.options.getString('deadline');
+    let deadline = deadlineText ? T.parseDeadline(deadlineText, first, tz) : new Date(first.getTime() - DEFAULT_DEADLINE_MINUTES * 60000);
+    if (!deadline) return interaction.reply({ content: `❌ I couldn't read the deadline "${deadlineText}". Use "2h" (before the first kick-off) or a time like "wed 6pm".`, flags: 64 });
+    if (deadline > first || deadline < now) deadline = first;
+
+    const role = interaction.options.getRole('ping');
+    const channel = interaction.options.getChannel('channel') || (club.events_channel_id ? await interaction.guild.channels.fetch(club.events_channel_id).catch(() => null) : null) || interaction.channel;
+    const me = interaction.guild.members.me;
+    const missing = missingChannelPerms(channel, me);
+    if (missing.length) return interaction.reply({ content: missingPermsMessage(channel, missing), flags: 64 });
+    const notify = interaction.options.getString('notify');
+    const signedRole = B.findSignedRole(interaction.guild.roles.cache, club);
+    if (notify === 'signed' && !signedRole) {
+      return interaction.reply({ content: '❌ No signed-players role is set. Pick one in **/manager → Roster & Squad → Signed Players Role**, or post with another ping.', flags: 64 });
+    }
+    const pingPlan = B.choosePing({ notify, pingRoleId: role?.id || null, league: typeInfo(type, base) === EVENT_TYPES.league, signedRoleId: signedRole?.id || null });
+    const pingRole = pingPlan.kind === 'role' ? interaction.guild.roles.cache.get(pingPlan.roleId) : null;
+    if (pingRole && !canPingRole(channel, me, pingRole)) {
+      return interaction.reply({ content: `❌ I can't ping ${pingRole} in <#${channel.id}>. Make the role mentionable or give me **Mention @everyone, @here and All Roles** there.`, flags: 64 });
+    }
+    const formationText = interaction.options.getString('formation');
+    const formation = formationText ? matchFormation(formationText) : null;
+    if (formationText && !formation) return interaction.reply({ content: `❌ I don't know the formation "${formationText}". Try something like 4-3-3 or 4-2-3-1 wide.`, flags: 64 });
+    const description = (interaction.options.getString('description') || '').slice(0, 1000) || null;
+
+    await interaction.deferReply({ flags: 64 });
+    const nightId = require('crypto').randomUUID();
+    const rows = kickoffs.map((k, i) => ({
+      guild_id: guildId,
+      club_key: club.key,
+      team_id: club.team_id || null,
+      night_id: nightId,
+      night_game: i + 1,
+      title: N.gameTitle(base, i, kickoffs.length),
+      description,
+      event_type: type,
+      scheduled_at: k.toISOString(),
+      // One deadline for the whole night, so the reminder goes out once
+      deadline_at: deadline.toISOString(),
+      duration_minutes: minutes[i],
+      ping_role_id: role?.id || null,
+      position_signup: type === 'tryout',
+      formation,
+      created_by_discord_id: interaction.user.id,
+      channel_id: channel.id,
+    }));
+    let posted;
+    try {
+      posted = await postNight(rows, channel, { notify });
+    } catch (err) {
+      return interaction.editReply({ content: `❌ Could not post the games: ${err.message}` });
+    }
+    const firstGame = posted[0];
+    const { source } = await expectedPlayers(firstGame);
+    const notes = [
+      `✅ Posted **${kickoffs.length} games** for **${base}** in <#${channel.id}>: ${messageLink(guildId, channel.id, firstGame.message_id)}`,
+      `🌙 ${N.scheduleLine(posted)} · answers due <t:${T.unix(deadline)}:R>.`,
+      `Pinged ${B.pingLabel(firstGame.pingPlan)} once for the whole night. Players can answer each game, or tap **Available for all ${kickoffs.length}**.`,
+      source === 'none'
+        ? 'Tip: add players with **/manager → Roster & Squad → Add Player** so I can remind the ones who have not answered.'
+        : 'I will DM anyone who has not answered once before the deadline, listing the games they are missing.',
+      `📋 Build one lineup, then use **Copy to all games** (or **/manager → Events → Lineups for All Games**) to copy or auto-fill the rest. Change any game with **Edit Event**.`,
+    ];
+    if (firstGame.pingPlan?.missingSigned) notes.push("⚠️ League games never ping @everyone, and I couldn't find your signed-players role. Pick it in **/manager → Events → Signed Players Role**.");
+    return interaction.editReply({ content: notes.join('\n') });
+  }
+
+  // Save every game first (so each board shows the whole night), then post the boards in order.
+  // Only the first board pings. If any post fails, the whole night is taken down again.
+  async function postNight(rows, channel, { notify = null } = {}) {
+    const { data: saved, error } = await supabase.from('availability_events').insert(rows).select();
+    if (error) throw new Error(error.message);
+    const games = [...(saved || [])].sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+    const sent = [];
+    try {
+      for (const [i, game] of games.entries()) {
+        const plan = i === 0 ? await pingPlanFor(game, { notify }) : { kind: 'none' };
+        if (i === 0) game.pingPlan = plan;
+        const intro = i === 0 ? B.pingContent(plan, `🌙 **${games.length} games tonight**: ${N.scheduleLine(games)}`) : B.pingContent({ kind: 'none' }, '');
+        const message = await channel.send({ ...(await buildBoard(game)), ...intro });
+        sent.push(message);
+        game.message_id = message.id;
+        await supabase.from('availability_events').update({ message_id: message.id }).eq('id', game.id);
+      }
+    } catch (err) {
+      for (const m of sent) await m.delete().catch(() => {});
+      await supabase.from('availability_events').delete().eq('night_id', rows[0].night_id);
+      throw err;
+    }
+    return games;
+  }
+
+  // "Available for all 3" on a board or reminder DM: the same answer for every open game of the night
+  async function handleAllGames(interaction, response, nightId) {
+    const games = (await nightGames(nightId)).filter((g) => !g.closed && !g.cancelled);
+    if (!games.length) return interaction.reply({ content: "❌ That night's games are finished.", flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    const done = [];
+    const skipped = [];
+    let gateMessage = null;
+    for (const game of games) {
+      const number = game.night_game || games.indexOf(game) + 1;
+      if (await isLocked(game)) { skipped.push(`Game ${number} (answers closed)`); continue; }
+      const gate = await canAnswer(game, interaction.user.id, interaction.member);
+      if (!gate.ok) { gateMessage = B.signedOnlyMessage(game, gate.role); skipped.push(`Game ${number}`); continue; }
+      const position = response === 'yes' && game.position_signup ? (await usualPositions(game, interaction.user.id)).join(',') || null : null;
+      try {
+        await saveResponse(game, interaction.user.id, response, position);
+        done.push(`Game ${number}`);
+      } catch (err) {
+        skipped.push(`Game ${number} (${err.message})`);
+      }
+      await refreshBoard(game);
+    }
+    const r = RESPONSES[response];
+    const lines = [];
+    if (done.length) lines.push(`${r.emoji} You're down as **${r.label}** for ${done.length === games.length ? `all ${games.length} games` : done.join(', ')} of **${nightTitle(games[0])}**.`);
+    if (skipped.length) lines.push(`Not changed: ${skipped.join(', ')}.`);
+    if (!done.length && gateMessage) lines.push(gateMessage);
+    if (done.length && response !== 'no') lines.push('-# Different answer for one game? Tap the buttons on that game\'s post.');
+    return interaction.editReply({ content: lines.join('\n'), allowedMentions: { parse: [] } });
+  }
+
+  // /manager → Events → Lineups for All Games: copy one game's lineup to the night's other games,
+  // or auto-fill each from its own answers (event-lineup.cjs does the work)
+  let nightLineupHandler = null;
+  async function handleNightLineup(interaction) {
+    const event = await loadEvent(interaction.options.getString('event'));
+    const mode = interaction.options.getString('mode') === 'autofill' ? 'autofill' : 'copy';
+    if (!event || event.guild_id !== interaction.guildId || event.closed) return interaction.reply({ content: '❌ Pick an open game from the list.', flags: 64 });
+    if (!event.night_id) return interaction.reply({ content: "❌ That game isn't part of a night. Post several games with **/manager → Events → Games in a Row**.", flags: 64 });
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const allowed = club ? await canManageClub(interaction.member, club) : isManager(interaction.member);
+    if (!allowed) return interaction.reply({ content: '❌ Only club leaders can set lineups.', flags: 64 });
+    if (!nightLineupHandler) return interaction.reply({ content: '❌ Lineups are not available right now. Try again in a minute.', flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    const result = await nightLineupHandler({ event, mode, userId: interaction.user.id, guild: interaction.guild }).catch((err) => ({ message: `❌ ${err.message}` }));
+    return interaction.editReply({ content: result.message });
+  }
+
   // ---------- Respond ----------
 
   // The same position buttons as My Positions. The picks so far ride in each button's id, so a tap
@@ -972,6 +1240,7 @@ function createEvents(deps) {
   // ---------- Reminders ----------
 
   async function sendReminder(event, { manual = false } = {}) {
+    if (event.night_id) return sendNightReminder(event, { manual });
     const responses = await loadResponses(event.id);
     const answered = new Set(responses.map((r) => r.discord_user_id));
     const { expected, source } = await expectedPlayers(event);
@@ -1017,6 +1286,62 @@ function createEvents(deps) {
     return { waiting: waiting.length, dmSent, dmFailed, source };
   }
 
+  // A game night reminds each player once for all its games: one DM naming the games they haven't
+  // answered, with buttons that answer every game, and at most one channel nudge for the night.
+  async function sendNightReminder(event, { manual = false } = {}) {
+    const all = await nightGames(event);
+    const games = all.filter((g) => !g.closed && !g.cancelled);
+    if (!games.length) return { waiting: 0, dmSent: 0, dmFailed: 0, source: 'none' };
+    const perGame = [];
+    let source = 'none';
+    for (const game of games) {
+      const answered = new Set((await loadResponses(game.id)).map((r) => r.discord_user_id));
+      const found = await expectedPlayers(game);
+      if (found.source !== 'none') source = found.source;
+      perGame.push({ game, waiting: found.expected.filter((id) => !answered.has(id)) });
+    }
+    const byPlayer = N.waitingByPlayer(perGame);
+    const first = games[0];
+    const base = nightTitle(first);
+    const due = T.unix(first.deadline_at || first.scheduled_at);
+    const link = first.message_id ? messageLink(first.guild_id, first.channel_id, first.message_id) : null;
+    const numberOf = (g) => all.findIndex((x) => x.id === g.id) + 1;
+
+    let dmSent = 0;
+    const dmFailedIds = [];
+    for (const [userId, list] of byPlayer) {
+      const which = list.length === games.length ? (games.length === 2 ? 'either game' : `any of the ${games.length} games`) : list.map((g) => `Game ${numberOf(g)}`).join(', ');
+      const buttons = list.length === 1
+        ? Object.entries(RESPONSES).map(([key, r]) => new ButtonBuilder().setCustomId(`ev_r:${key}:${list[0].id}`).setLabel(`${r.label} for Game ${numberOf(list[0])}`).setEmoji(r.emoji).setStyle(r.style))
+        : Object.entries(RESPONSES).map(([key, r]) => new ButtonBuilder().setCustomId(`ev_all:${key}:${event.night_id}`).setLabel(`${r.label} for all ${games.length}`).setEmoji(r.emoji).setStyle(r.style));
+      try {
+        const user = await client.users.fetch(userId);
+        await user.send({
+          content: `⏰ **${base}**: ${all.length} games tonight (${N.scheduleLine(all)}). You haven't answered ${which} yet. Can you play? Please answer by <t:${due}:R>.${list.length > 1 ? '\nA different answer for each game? Tap the buttons on each game\'s post.' : ''}${link ? `\n${link}` : ''}`,
+          components: [new ActionRowBuilder().addComponents(buttons)],
+        });
+        dmSent++;
+      } catch {
+        dmFailedIds.push(userId);
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    const board = await fetchBoardMessage(first);
+    if (board && (dmFailedIds.length || source === 'none')) {
+      const payload = dmFailedIds.length
+        ? await pingFor(first, `⏰ I couldn't DM ${dmFailedIds.map((id) => `<@${id}>`).join(' ')}: can you make tonight's games? Answer on the posts by <t:${due}:R>.`)
+        : B.pingContent({ kind: 'none' }, `⏰ Answers for tonight's ${all.length} games close <t:${due}:R>. Tap a button on each game's post.`);
+      await board.reply({ ...payload, content: truncate(payload.content, 2000) }).catch(() => {});
+    }
+    if (!manual) await supabase.from('availability_events').update({ deadline_reminder_sent: true }).eq('night_id', event.night_id);
+    return { waiting: byPlayer.size, dmSent, dmFailed: dmFailedIds.length, source };
+  }
+
+  function nightTitle(event) {
+    return String(event.title || '').replace(/ · Game \d+ of \d+$/, '');
+  }
+
   async function handleRemindButton(interaction, eventId) {
     const event = await loadEvent(eventId);
     if (!event || event.closed) return interaction.reply({ content: '❌ That event is closed.', flags: 64 });
@@ -1027,11 +1352,11 @@ function createEvents(deps) {
     const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
     const allowed = club ? await canManageClub(interaction.member, club) : isManager(interaction.member);
     if (!allowed) return interaction.reply({ content: '❌ Only club leaders can send reminders.', flags: 64 });
-    const last = manualRemindAt.get(event.id) || 0;
+    const last = manualRemindAt.get(event.night_id || event.id) || 0;
     if (Date.now() - last < MANUAL_REMIND_COOLDOWN_MS) {
       return interaction.reply({ content: `⏳ A reminder went out <t:${Math.floor(last / 1000)}:R>. Try again in a few minutes.`, flags: 64 });
     }
-    manualRemindAt.set(event.id, Date.now());
+    manualRemindAt.set(event.night_id || event.id, Date.now());
     await interaction.deferReply({ flags: 64 });
     const result = await sendReminder(event, { manual: true });
     if (result.source === 'none') {
@@ -1609,12 +1934,16 @@ function createEvents(deps) {
       .not('deadline_at', 'is', null)
       .gt('deadline_at', now.toISOString())
       .lte('deadline_at', new Date(now.getTime() + REMIND_LEAD_MS).toISOString());
+    const nightsDone = new Set();
     for (const event of events || []) {
       if (!client.guilds.cache.has(event.guild_id)) continue;
+      // A night's games are reminded together, once
+      if (event.night_id && nightsDone.has(event.night_id)) continue;
       // Give fresh events half the time to their deadline before chasing anyone
       const deadline = new Date(event.deadline_at).getTime();
       const created = new Date(event.created_at).getTime();
       if (now.getTime() < created + (deadline - created) / 2) continue;
+      if (event.night_id) nightsDone.add(event.night_id);
       await sendReminder(event).catch((err) => console.warn(`[events] reminder ${event.id} failed: ${err.message}`));
     }
   }
@@ -1696,6 +2025,8 @@ function createEvents(deps) {
     if (group === 'preset') await handlePreset(interaction, sub);
     else if (group === 'series') await handleSeries(interaction, sub);
     else if (sub === 'new') await handleNew(interaction);
+    else if (sub === 'night') await handleNight(interaction);
+    else if (sub === 'nightlineup') await handleNightLineup(interaction);
     else if (sub === 'list') await interaction.reply({ ...(await buildEventList(interaction.guildId)), flags: 64 });
     else if (sub === 'cancel') await handleCancel(interaction);
     else if (sub === 'edit') await handleEdit(interaction);
@@ -1744,6 +2075,7 @@ function createEvents(deps) {
       return interaction.followUp(opts);
     };
     shim.deferReply = () => interaction.deferUpdate();
+    if (pending.kind === 'night') return handleNight(shim);
     return pending.kind === 'edit' ? handleEdit(shim) : handleNew(shim);
   }
 
@@ -1771,6 +2103,7 @@ function createEvents(deps) {
     const [action, a, b, c] = interaction.customId.split(':');
     if (!action.startsWith('ev_')) return false;
     if (action === 'ev_r' && RESPONSES[a]) await handleResponse(interaction, a, b);
+    else if (action === 'ev_all' && RESPONSES[a]) await handleAllGames(interaction, a, b);
     else if (action === 'ev_posb') await handlePositionToggle(interaction, a, b, c);
     else if (action === 'ev_posok') await handlePositionPick(interaction, a, b || '');
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
@@ -1895,6 +2228,11 @@ function createEvents(deps) {
     runScheduler: tick,
     setReliabilityLookup: (fn) => {
       reliabilityLookup = fn;
+    },
+    nightGames,
+    nightTitle,
+    setNightLineupHandler: (fn) => {
+      nightLineupHandler = fn;
     },
     onTick: (fn) => tickHooks.push(fn),
     onClose: (fn) => afterClose.push(fn),

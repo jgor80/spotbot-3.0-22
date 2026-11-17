@@ -6,6 +6,7 @@
 const { EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { FORMATION_SLOTS, autofillLineup } = require('./lineup-autofill.cjs');
 const { splitPositions } = require('./event-board.cjs');
+const N = require('./event-night.cjs');
 
 const DEFAULT_FORMATION = '4-3-3 FLAT';
 const BENCH_OFFSET = 100;
@@ -112,6 +113,14 @@ function createEventLineup(deps) {
         new ButtonBuilder().setCustomId(`evl_cancel:${event.id}`).setLabel('Discard').setStyle(ButtonStyle.Danger)
       )
     );
+    // Game nights: start from another game's lineup, or send this one to every game at once
+    const open = (d.night || []).filter((g) => !g.closed && !g.cancelled);
+    if (open.length > 1) {
+      const nightRow = [];
+      if (d.copyFrom) nightRow.push(new ButtonBuilder().setCustomId(`evl_copy:${event.id}`).setLabel(`Copy Game ${d.copyFrom.number}'s lineup`).setEmoji('📄').setStyle(ButtonStyle.Secondary));
+      nightRow.push(new ButtonBuilder().setCustomId(`evl_pubnight:${event.id}`).setLabel(`Publish to all ${open.length} games`).setEmoji('🌙').setStyle(ButtonStyle.Primary));
+      rows.push(new ActionRowBuilder().addComponents(nightRow));
+    }
     return { embeds: [embed], components: rows };
   }
 
@@ -125,6 +134,7 @@ function createEventLineup(deps) {
     if (!pool.length) return interaction.editReply({ content: 'Nobody has answered Available or Maybe yet.' });
     const formation = FORMATION_SLOTS[event.formation] ? event.formation : DEFAULT_FORMATION;
     const d = { formation, pool, slots: await autofill(event, formation, pool), selectedSlot: null };
+    if (event.night_id) Object.assign(d, await nightInfo(event));
     drafts.set(`${eventId}:${interaction.user.id}`, d);
     return interaction.editReply(render(event, d, interaction.guild));
   }
@@ -142,29 +152,16 @@ function createEventLineup(deps) {
     const event = await events.loadEvent(eventId);
     if (!d || !event) return interaction.update({ content: 'This lineup draft expired.', embeds: [], components: [] });
     await interaction.deferUpdate();
-    const positions = FORMATION_SLOTS[d.formation];
     const used = new Set(d.slots.values());
     const bench = d.pool.filter((p) => !used.has(p.id)).map((p) => p.id);
 
-    const { data: lineup, error } = await supabase
-      .from('lineups')
-      .insert({ guild_id: event.guild_id, event_id: event.id, team_id: event.team_id || null, name: event.title, formation: d.formation, created_by_discord_id: interaction.user.id, channel_id: event.channel_id })
-      .select()
-      .single();
-    if (error) return interaction.editReply({ content: `❌ Could not save the lineup: ${error.message}`, embeds: [], components: [] });
-    const slotRows = [
-      ...[...d.slots.entries()].map(([i, id]) => ({ lineup_id: lineup.id, discord_user_id: id, position: positions[i], slot_index: i, is_substitute: false })),
-      ...bench.map((id, k) => ({ lineup_id: lineup.id, discord_user_id: id, position: 'SUB', slot_index: BENCH_OFFSET + k, is_substitute: true })),
-    ];
-    if (slotRows.length) {
-      const { error: slotError } = await supabase.from('lineup_slots').insert(slotRows);
-      if (slotError) {
-        // Don't post or DM a lineup with no players in it
-        await supabase.from('lineups').delete().eq('id', lineup.id);
-        return interaction.editReply({ content: `❌ Could not save the lineup's players: ${slotError.message}. Nothing was posted; try Publish again.`, embeds: [], components: [] });
-      }
+    let saved;
+    try {
+      saved = await saveLineup(event, { formation: d.formation, slots: d.slots, bench }, interaction.user.id);
+    } catch (err) {
+      return interaction.editReply({ content: `❌ ${err.message}. Nothing was posted; try Publish again.`, embeds: [], components: [] });
     }
-    await supabase.from('availability_events').update({ formation: d.formation }).eq('id', event.id);
+    const { lineup, slotRows } = saved;
 
     const posted = await postLineup(lineup.id);
     let dmOk = 0, dmFail = 0;
@@ -180,6 +177,208 @@ function createEventLineup(deps) {
       components: [],
     });
   }
+
+  // Save a lineup (XI + bench) against an event. Throws with a readable message; never leaves a
+  // lineup row without its players.
+  async function saveLineup(event, { formation, slots, bench }, userId) {
+    const positions = FORMATION_SLOTS[formation];
+    const { data: lineup, error } = await supabase
+      .from('lineups')
+      .insert({ guild_id: event.guild_id, event_id: event.id, team_id: event.team_id || null, name: event.title, formation, created_by_discord_id: userId, channel_id: event.channel_id })
+      .select()
+      .single();
+    if (error) throw new Error(`Could not save the lineup: ${error.message}`);
+    const slotRows = [
+      ...[...slots.entries()].map(([i, id]) => ({ lineup_id: lineup.id, discord_user_id: id, position: positions[i], slot_index: i, is_substitute: false })),
+      ...bench.map((id, k) => ({ lineup_id: lineup.id, discord_user_id: id, position: 'SUB', slot_index: BENCH_OFFSET + k, is_substitute: true })),
+    ];
+    if (slotRows.length) {
+      const { error: slotError } = await supabase.from('lineup_slots').insert(slotRows);
+      if (slotError) {
+        await supabase.from('lineups').delete().eq('id', lineup.id);
+        throw new Error(`Could not save the lineup's players: ${slotError.message}`);
+      }
+    }
+    await supabase.from('availability_events').update({ formation }).eq('id', event.id);
+    return { lineup, slotRows };
+  }
+
+  // ---------- Game nights: copy or auto-fill lineups across the night ----------
+
+  async function latestLineup(eventId) {
+    const { data } = await supabase.from('lineups').select('id, formation, message_id, created_at').eq('event_id', eventId).order('created_at', { ascending: false }).limit(1);
+    const lineup = data?.[0];
+    if (!lineup) return null;
+    const { data: slots } = await supabase.from('lineup_slots').select('discord_user_id, position, slot_index, is_substitute').eq('lineup_id', lineup.id).order('slot_index');
+    return { ...lineup, slots: slots || [] };
+  }
+
+  // The night's games and the best game to copy from: the nearest earlier game with a saved
+  // lineup, else any other game with one
+  async function nightInfo(event) {
+    const night = await events.nightGames(event);
+    const index = night.findIndex((g) => g.id === event.id);
+    const order = [...night.slice(0, index).reverse(), ...night.slice(index + 1)];
+    for (const g of order) {
+      const lineup = await latestLineup(g.id);
+      if (lineup?.slots.length) return { night, copyFrom: { eventId: g.id, number: night.indexOf(g) + 1 } };
+    }
+    return { night, copyFrom: null };
+  }
+
+  // A source lineup fitted to another game: starters who said Unavailable for that game drop out,
+  // the gaps are auto-filled from that game's own Available/Maybe answers, everyone else sits on the bench
+  async function fitLineup(game, source) {
+    const responses = await events.loadResponses(game.id);
+    const out = new Set(responses.filter((r) => r.response === 'no').map((r) => r.discord_user_id));
+    const formation = FORMATION_SLOTS[source.formation] ? source.formation : DEFAULT_FORMATION;
+    const slotCount = FORMATION_SLOTS[formation].length;
+    const slots = new Map();
+    for (const s of source.slots) {
+      if (!s.is_substitute && s.slot_index < slotCount && !out.has(s.discord_user_id)) slots.set(s.slot_index, s.discord_user_id);
+    }
+    const pool = await poolFor(game);
+    const used = new Set(slots.values());
+    const free = pool.filter((p) => !used.has(p.id) && !out.has(p.id));
+    if (slots.size < slotCount && free.length) {
+      const filled = await autofill(game, formation, free);
+      for (const [i, id] of filled) if (!slots.has(i)) slots.set(i, id);
+    }
+    const starters = new Set(slots.values());
+    const bench = [...new Set([...source.slots.filter((s) => s.is_substitute).map((s) => s.discord_user_id), ...pool.map((p) => p.id)])]
+      .filter((id) => !starters.has(id) && !out.has(id))
+      .slice(0, 9);
+    const dropped = source.slots.filter((s) => !s.is_substitute && out.has(s.discord_user_id)).map((s) => s.discord_user_id);
+    return { formation, slots, bench, dropped };
+  }
+
+  // Publish a lineup to several games of a night: each game gets its own saved lineup and post
+  // (only the night's first lineup post pings), and each player gets one DM covering every game.
+  async function publishAcross(games, planFor, userId) {
+    const night = games.length ? await events.nightGames(games[0]) : [];
+    const done = [];
+    const notes = [];
+    for (const game of games) {
+      const number = night.findIndex((g) => g.id === game.id) + 1;
+      const plan = await planFor(game);
+      if (!plan || !plan.slots.size) { notes.push(`Game ${number}: nobody available to pick yet`); continue; }
+      try {
+        const { lineup, slotRows } = await saveLineup(game, plan, userId);
+        await postLineup(lineup.id);
+        done.push({ game, number, lineup, slotRows });
+        if (plan.dropped?.length) notes.push(`Game ${number}: ${plan.dropped.map((id) => `<@${id}>`).join(', ')} said Unavailable, so I filled the gap`);
+      } catch (err) {
+        notes.push(`Game ${number}: ${err.message}`);
+      }
+    }
+    // One DM per player for the whole night
+    const byPlayer = new Map();
+    for (const r of done) {
+      for (const row of r.slotRows) {
+        if (!byPlayer.has(row.discord_user_id)) byPlayer.set(row.discord_user_id, []);
+        byPlayer.get(row.discord_user_id).push({ game: r.game, index: r.number - 1, slot: row, lineupId: r.lineup.id, number: r.number });
+      }
+    }
+    let dmOk = 0, dmFail = 0;
+    for (const [id, entries] of byPlayer) {
+      const ok = await dmNight(id, night, entries).catch(() => false);
+      ok ? dmOk++ : dmFail++;
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    return { done, notes, dmOk, dmFail };
+  }
+
+  async function dmNight(userId, night, entries) {
+    if (entries.length === 1) {
+      const e = entries[0];
+      return dmPlayer(e.game, { id: e.lineupId }, e.slot);
+    }
+    const user = await events.getClient()?.users.fetch(userId).catch(() => null);
+    if (!user || !night.length) return false;
+    const title = events.nightTitle ? events.nightTitle(night[0]) : night[0].title;
+    await user.send({
+      content: `📣 Your lineups for **${title}**:\n${N.lineupDmLines(entries).join('\n')}\nPlease confirm you'll be there:`,
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`evl_okall:${night[0].night_id}`).setLabel(`I'm in for all ${entries.length}`).setEmoji('✅').setStyle(ButtonStyle.Success)
+        ),
+        new ActionRowBuilder().addComponents(
+          entries.slice(0, 5).map((e) => new ButtonBuilder().setCustomId(`evl_no:${e.lineupId}`).setLabel(`Can't make Game ${e.number}`).setEmoji('❌').setStyle(ButtonStyle.Danger))
+        ),
+      ],
+    });
+    return true;
+  }
+
+  // "I'm in for all" from a night DM: confirm the player in the latest lineup of every open game
+  async function confirmNight(interaction, nightId) {
+    const games = (await events.nightGames(nightId)).filter((g) => !g.closed && !g.cancelled);
+    const now = new Date().toISOString();
+    const confirmed = [];
+    for (const game of games) {
+      const lineup = await latestLineup(game.id);
+      if (!lineup || !lineup.slots.some((s) => s.discord_user_id === interaction.user.id)) continue;
+      const { error } = await supabase.from('lineup_slots').update({ confirmed_at: now, declined_at: null }).eq('lineup_id', lineup.id).eq('discord_user_id', interaction.user.id);
+      if (!error) {
+        confirmed.push(`Game ${game.night_game || games.indexOf(game) + 1}`);
+        await refreshLineupPost(lineup.id);
+      }
+    }
+    return interaction.reply({
+      content: confirmed.length ? `✅ Confirmed for ${confirmed.join(', ')}. See you there.` : "You're not in any of tonight's lineups.",
+      flags: 64,
+    });
+  }
+
+  // From the Build Lineup draft: send this XI to every open game of the night
+  async function publishNightFromDraft(interaction, eventId) {
+    const d = drafts.get(`${eventId}:${interaction.user.id}`);
+    const event = await events.loadEvent(eventId);
+    if (!d || !event) return interaction.update({ content: 'This lineup draft expired.', embeds: [], components: [] });
+    await interaction.deferUpdate();
+    const used = new Set(d.slots.values());
+    const source = {
+      formation: d.formation,
+      slots: [
+        ...[...d.slots.entries()].map(([i, id]) => ({ discord_user_id: id, slot_index: i, is_substitute: false })),
+        ...d.pool.filter((p) => !used.has(p.id)).map((p, k) => ({ discord_user_id: p.id, slot_index: BENCH_OFFSET + k, is_substitute: true })),
+      ],
+    };
+    const games = (await events.nightGames(event)).filter((g) => !g.closed && !g.cancelled);
+    const bench = source.slots.filter((s) => s.is_substitute).map((s) => s.discord_user_id);
+    const result = await publishAcross(games, (g) => (g.id === event.id ? { formation: d.formation, slots: d.slots, bench } : fitLineup(g, source)), interaction.user.id);
+    drafts.delete(`${eventId}:${interaction.user.id}`);
+    return interaction.editReply({ content: nightSummary(result), embeds: [], components: [], allowedMentions: { parse: [] } });
+  }
+
+  function nightSummary({ done, notes, dmOk, dmFail }) {
+    const lines = [done.length ? `✅ Lineups published for ${done.map((r) => `Game ${r.number}`).join(', ')}. DMed **${dmOk}** player(s) once for the whole night${dmFail ? `, **${dmFail}** have DMs closed (they can confirm on the posts)` : ''}.` : '❌ No lineups were published.'];
+    if (notes.length) lines.push(...notes.map((n) => `• ${n}`));
+    lines.push('-# Each game keeps its own lineup: change one with Build Lineup or Team Sheet → Edit Lineup.');
+    return lines.join('\n');
+  }
+
+  // /manager → Events → Lineups for All Games (also the web Control Room and MCP club actions)
+  events.setNightLineupHandler?.(async ({ event, mode, userId, guild }) => {
+    await guild?.members.fetch().catch(() => {});
+    const games = (await events.nightGames(event)).filter((g) => !g.closed && !g.cancelled && g.id !== event.id);
+    if (!games.length) return { message: '❌ There are no other open games tonight.' };
+    if (mode === 'autofill') {
+      const result = await publishAcross(games, async (g) => {
+        const pool = await poolFor(g);
+        if (!pool.length) return null;
+        const formation = FORMATION_SLOTS[g.formation] ? g.formation : FORMATION_SLOTS[event.formation] ? event.formation : DEFAULT_FORMATION;
+        const slots = await autofill(g, formation, pool);
+        const used = new Set(slots.values());
+        return { formation, slots, bench: pool.filter((p) => !used.has(p.id)).map((p) => p.id).slice(0, 9) };
+      }, userId);
+      return { message: nightSummary(result) };
+    }
+    const source = await latestLineup(event.id);
+    if (!source?.slots.length) return { message: `❌ **${event.title}** has no lineup yet. Build it first (Build Lineup on its post), or pick **Auto-fill each game**.` };
+    const result = await publishAcross(games, (g) => fitLineup(g, source), userId);
+    return { message: nightSummary(result) };
+  });
 
   async function loadLineup(lineupId) {
     const { data: lineup } = await supabase.from('lineups').select('*').eq('id', lineupId).maybeSingle();
@@ -221,7 +420,10 @@ function createEventLineup(deps) {
     if (!channel?.send) return false;
     // Ping the event's role (signed players for league games) or @everyone, never each player;
     // the lineup itself names them
-    const ping = await events.pingFor(event, `📣 The lineup for **${event.title}** is up.`);
+    // A game night pings for its first lineup only; the rest go up quietly
+    const ping = (await nightLineupPosted(event, lineup.id))
+      ? { content: `📣 The lineup for **${event.title}** is up.`, allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } }
+      : await events.pingFor(event, `📣 The lineup for **${event.title}** is up.`);
     // The pitch image (player cards, bench) from lineup-board.cjs; the post goes out without it if it can't be drawn
     const png = deps.lineupImage ? await deps.lineupImage(lineup.id, { subtitle: event.title }) : null;
     const embed = lineupEmbed(event, lineup);
@@ -230,6 +432,15 @@ function createEventLineup(deps) {
     if (!msg) return false;
     await supabase.from('lineups').update({ message_id: msg.id, channel_id: channel.id }).eq('id', lineup.id);
     return true;
+  }
+
+  // Has another lineup of this event's night (or an earlier one of this game) already been posted?
+  async function nightLineupPosted(event, lineupId) {
+    if (!event.night_id || !events.nightGames) return false;
+    const ids = (await events.nightGames(event)).map((g) => g.id);
+    if (!ids.length) return false;
+    const { data } = await supabase.from('lineups').select('id').in('event_id', ids).not('message_id', 'is', null).neq('id', lineupId).limit(1);
+    return !!data?.length;
   }
 
   async function refreshLineupPost(lineupId) {
@@ -298,7 +509,9 @@ function createEventLineup(deps) {
       const late = now.getTime() > kickoff + VC_LATE_MS;
       const update = {};
       let stage = null;
-      if (!event.vc_invite_30_sent) { update.vc_invite_30_sent = true; if (!late && now.getTime() < kickoff) stage = 'soon'; }
+      // Later games of a night skip the 30-minute DM: the squad is still on from the game before
+      const laterGame = event.night_id && (event.night_game || 1) > 1;
+      if (!event.vc_invite_30_sent) { update.vc_invite_30_sent = true; if (!late && !laterGame && now.getTime() < kickoff) stage = 'soon'; }
       if (!event.vc_invite_0_sent && now.getTime() >= kickoff) { update.vc_invite_0_sent = true; stage = late ? null : 'now'; }
       if (!Object.keys(update).length) continue;
       await supabase.from('availability_events').update(update).eq('id', event.id);
@@ -354,6 +567,27 @@ function createEventLineup(deps) {
     else if (action === 'evl_ok') await answer(interaction, id, true);
     else if (action === 'evl_no') await answer(interaction, id, false);
     else if (action === 'evl_publish') await publish(interaction, id);
+    else if (action === 'evl_pubnight') await publishNightFromDraft(interaction, id);
+    else if (action === 'evl_okall') await confirmNight(interaction, id);
+    else if (action === 'evl_copy') {
+      await withDraft(interaction, id, async (d, event) => {
+        if (!d.copyFrom) return;
+        const source = await latestLineup(d.copyFrom.eventId);
+        if (!source?.slots.length) return;
+        const fitted = await fitLineup(event, source);
+        d.formation = fitted.formation;
+        d.slots = fitted.slots;
+        // Copied players who didn't answer this game still need to be pickable
+        const known = new Set(d.pool.map((p) => p.id));
+        for (const s of source.slots) {
+          if (!known.has(s.discord_user_id) && !fitted.dropped.includes(s.discord_user_id)) {
+            d.pool.push({ id: s.discord_user_id, answer: 'maybe', positions: s.is_substitute ? [] : [s.position], tiers: null });
+            known.add(s.discord_user_id);
+          }
+        }
+        d.selectedSlot = null;
+      });
+    }
     else if (action === 'evl_cancel') {
       drafts.delete(`${id}:${interaction.user.id}`);
       await interaction.update({ content: 'Lineup discarded.', embeds: [], components: [] });

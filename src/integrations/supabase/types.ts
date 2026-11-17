@@ -116,6 +116,8 @@ export type Database = {
           guild_id: string
           id: string
           message_id: string | null
+          night_game: number | null
+          night_id: string | null
           ping_role_id: string | null
           position_signup: boolean
           reminder_24h_sent: boolean
@@ -146,6 +148,8 @@ export type Database = {
           guild_id: string
           id?: string
           message_id?: string | null
+          night_game?: number | null
+          night_id?: string | null
           ping_role_id?: string | null
           position_signup?: boolean
           reminder_24h_sent?: boolean
@@ -176,6 +180,8 @@ export type Database = {
           guild_id?: string
           id?: string
           message_id?: string | null
+          night_game?: number | null
+          night_id?: string | null
           ping_role_id?: string | null
           position_signup?: boolean
           reminder_24h_sent?: boolean
