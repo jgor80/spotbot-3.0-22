@@ -96,8 +96,17 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 `diagnose_fut_chemistry`, `preview_fut_swap`, `optimize_fut_squad`, `compare_fut_squads`, and for Market Lab
 `get_fut_market_overview`, `get_fut_card_market_intelligence`, `find_fut_market_opportunities`,
 `compare_fut_card_relative_value`, `analyze_fut_trade_thesis`, `get_fut_market_data_sources`, and for the Knowledge Bank
-`search_fut_knowledge` and `get_fut_knowledge_map` (the AI app answers from the claims itself, so they never call Claude). All read-only; with
-no `squad_id` they use the squad the player edited last.
+`search_fut_knowledge` and `get_fut_knowledge_map` (the AI app answers from the claims itself, so they never call Claude).
+Since 2026-11-17 every FUT page has a tool too: `search_fut_players` (Player Ratings: whole card list with full
+attributes, filters, stat weights), `search_fut_market_cards` (Market cards: prices, risers, fallers),
+`get_fut_price_history`, `compare_any_fut_cards`, `get_my_fut_club_value`, `get_fut_coach_plan` (FUT Coach),
+`get_fut_daily_strategy`, `get_fut_pack_advice`, `get_my_fut_account`, `get_my_fut_watchlist`,
+`get_my_current_fut_squad`, `fut_squad_advisor`, `fut_squad_upgrades`, `fut_ideal_squad`, `get_fut_meta_formations`,
+`get_fut_squad_roles` and `get_fut_team_plan` (Knowledge Bank "For my team"); `get_fut_card` now carries every
+in-game attribute and FC 27 role. Server-side AI (ideal squad playstyle reading, team plan tactics) only runs on the
+player's own saved Claude key. All read-only (Daily Strategy stores the day's plan for its track record, as the page
+does); squad tools with no `squad_id` use the squad the player plays now (`currentSquad`), the older ones the squad
+edited last.
 
 ## Rules
 
