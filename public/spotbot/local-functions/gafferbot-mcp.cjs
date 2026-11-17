@@ -9977,6 +9977,8 @@ var knowledgeMap = (db, userId, days, category) => rpcData(db, "kb_map", { p_use
 var knowledgeTopic = (db, userId, key, days) => rpcData(db, "kb_topic", { p_user: userId, p_key: key, p_days: days });
 
 // supabase/functions/_shared/fut/meta-builds.ts
+var RUN_MS = 3 * 36e5;
+var BUILD_WINDOW_DAYS = 63;
 var ARCH_KEYS = ARCHETYPES.map((a) => a.key);
 var STYLE_NAMES = PLAYSTYLES.map((p) => p.name);
 var ATTR_KEYS = ATTRIBUTES.map((a) => a.key);
@@ -10008,7 +10010,7 @@ var BUILD_SCHEMA = {
     } }
   }
 };
-async function loadMetaBuilds(db, days = 180, now2 = Date.now()) {
+async function loadMetaBuilds(db, days = BUILD_WINDOW_DAYS, now2 = Date.now()) {
   const { data, error } = await db.rpc("kb_meta_build_rows", { p_days: days });
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   const rows = Array.isArray(data) ? data : [];
@@ -10591,14 +10593,14 @@ var TOOLS = [
       type: "object",
       properties: {
         position: { type: "string", enum: [...META_POSITION_KEYS], description: "One position; leave out for all of them." },
-        days: { type: "integer", description: "Only builds from the last N days (default 180)." }
+        days: { type: "integer", description: "Only builds from the last N days (default 63, the last 9 weeks: FC 27 builds only)." }
       },
       additionalProperties: false
     },
     run: async (args, ctx) => {
       const position = str(args.position);
       if (position && !isMetaPosition(position)) throw new ToolError(`position must be one of ${META_POSITION_KEYS.join(", ")}.`);
-      const out = await loadMetaBuilds(ctx.db.schema("fut"), clampInt(args.days, 180, 7, 730));
+      const out = await loadMetaBuilds(ctx.db.schema("fut"), clampInt(args.days, 63, 7, 730));
       const list = out.positions.filter((m) => !position || m.position === position);
       return {
         days: out.days,

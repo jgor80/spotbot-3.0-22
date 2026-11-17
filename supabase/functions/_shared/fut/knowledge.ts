@@ -595,6 +595,11 @@ export async function addSource(db: Rpc, userId: string, input: AddInput, env: E
     : guessArea(`${url}\n${input.title ?? ""}\n${fetched ? `${fetched.title}\n${fetched.body}` : text}`);
   // A build share link on its own is enough for a Pro Clubs build: its numbers are in the link
   const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
+  // TikTok's embed API (oEmbed) gives apps the video but not its caption, and TikTok has no public search API: a TikTok
+  // build is added with its caption or the build pasted in
+  if (!fetched && text.length < 40 && !buildLink && /^https:\/\/([a-z]+\.)?tiktok\.com\//i.test(url)) {
+    throw new FutError("TikTok doesn't let apps read a video's caption. Paste the caption or the build (archetype, height, PlayStyles, attributes) into the text box with the link.");
+  }
   if (!fetched && text.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
   const title = squash(input.title, 300) || fetched?.title || squash(text.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);

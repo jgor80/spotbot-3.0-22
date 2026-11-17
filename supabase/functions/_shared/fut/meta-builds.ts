@@ -1,6 +1,6 @@
 // Community meta builds (Jeff, 2026-11-15: "extend the knowledge bank to meta builds and tell people what the community
 // is saying is the best build for each position"). Part of the Knowledge Bank's scheduled run (knowledge.ts):
-//   1. Collect Pro Clubs build posts and videos: r/ProClubs (and build searches in r/EASportsFC) through Reddit's public
+//   1. Collect Pro Clubs build posts and videos: r/FIFAClubs and r/ProClubs, one build search per position in turn (and r/EASportsFC) through Reddit's public
 //      RSS feeds, and Pro Clubs build videos through the YouTube Data API on the YouTube hours. Same official feeds as
 //      the rest of the bank, nothing scraped. These sources are stored with area 'proclubs'.
 //   2. Read: Claude writes down each build a source recommends (position, archetype, height, weight, skill moves, weak
@@ -27,12 +27,15 @@ export const DEFAULT_BUILD_QUERIES = [
   "FC 27 Clubs best striker ST build level 55", "FC 27 Clubs best winger LW RW build level 55", "FC 27 Clubs best CAM build level 55",
   "FC 27 Clubs best CM box to box build level 55", "FC 27 Clubs best CDM build level 55", "FC 27 Clubs best fullback LB RB build",
   "FC 27 Clubs best CB centre back build level 55", "FC 27 Clubs best goalkeeper GK build",
+  // The two thinnest positions get a second search (Jeff, 2026-11-17: "scour ... for more positional build
+  // recommendations"): 10 searches x 4 runs = 4,000 units, still inside the daily quota with the Ultimate Team searches.
+  "FC 27 Pro Clubs sweeper keeper shot stopper build", "FC 27 Pro Clubs wingback full back marauder progressor build",
 ];
 // Pro Clubs build videos found by hand on 2026-11-16 so every position starts with at least five sources (most of them are
 // older than the searches' look-back). Each is fetched once through the YouTube API and then skipped (kb_known);
 // FUT_KB_BUILD_SEED=off turns this off. By position: GK, CB, FB, CDM, CM, CAM, W, ST (some cover several).
 export const BUILD_SEED_VIDEOS = [
-  "z_bTu7cqEqI", "8ayxW3GKsWg", "u01yJjdgX1g", "Ao_UEEEZOeE", "Q2UcXD7kq40", "fptZQH-b5xY",
+  "z_bTu7cqEqI", "8ayxW3GKsWg", "u01yJjdgX1g", "Q2UcXD7kq40", "fptZQH-b5xY",
   "jzlOG_OIy90", "RFAilZw37SE", "b5CkfpfN7b8", "F2ohRX2mgnc",
   "JmkwjfrBp1I", "Siq5HhEQfSw", "h_NdCpamo84", "1LoAiw1s294", "CY77avsq8sI",
   "kQbZbfdUKQo", "O3qtUbLdWKQ", "21zoVW0llRA", "zaDYtQNo24o", "86Oo21_FRU0",
@@ -41,13 +44,56 @@ export const BUILD_SEED_VIDEOS = [
   "aJLL3PgVN2U", "oVOvMFtiCcQ", "qTM99HWFLQU", "wNCyECb9vIw", "BTJ112ubqWA",
   "E18UOuXzBwo", "2FgIycXv6gw",
 ];
+// Reddit build searches, one per position. The main Pro Clubs subreddit is r/FIFAClubs (r/ProClubs is small); the first
+// version only searched r/ProClubs and r/EASportsFC and found no builds. Three positions a run, in turn, so each run
+// asks Reddit only a few times (its feeds rate-limit); every position comes round every 9 hours.
+export const REDDIT_BUILD_SEARCHES: Record<string, string> = {
+  GK: "(goalkeeper OR keeper OR GK) build",
+  FB: "(fullback OR \"full back\" OR wingback OR LB OR RB) build",
+  CB: "(CB OR \"centre back\" OR \"center back\" OR defender) build",
+  CDM: "(CDM OR recycler OR disruptor) build",
+  CM: "(CM OR \"box to box\" OR maestro) build",
+  CAM: "(CAM OR creator OR magician) build",
+  W: "(winger OR LW OR RW OR spark) build",
+  ST: "(striker OR ST OR finisher OR target) build",
+};
+export const REDDIT_BUILD_SUBS = ["FIFAClubs", "ProClubs"];
+const RUN_MS = 3 * 3_600_000;
+
+// FC 27 builds only, from the last 9 weeks (Jeff, 2026-11-17: "find as many as we can for fc 27 only within the last
+// 9 weeks"). FUT_KB_BUILD_DAYS changes the window (7-365 days); anything older, or titled for an older game, is left out.
+export const BUILD_WINDOW_DAYS = 63;
+export const buildWindowDays = (env: Env) => {
+  const n = Math.round(Number(env("FUT_KB_BUILD_DAYS")));
+  return Number.isFinite(n) && n >= 7 && n <= 365 ? n : BUILD_WINDOW_DAYS;
+};
+/** A title for FC 26, FC 25 or a FIFA game (and not FC 27): another game's build. */
+export const olderGameTitle = (title: string) => /\b(e?a?\s?fc\s?'?2[0-6]|fifa\s?'?\d{2})\b/i.test(title) && !/\bfc\s?'?27\b/i.test(title);
+
+/** This run's Reddit feeds: each sub's top posts this week, then three positions' searches in turn. */
+export function redditBuildFeeds(env: Env, now = Date.now()): { sub: string; url: string }[] {
+  const subs = (env("FUT_KB_BUILD_SUBS") ?? "").split(",").map((s) => s.trim()).filter((s) => /^[A-Za-z0-9_]{2,30}$/.test(s));
+  const use = subs.length ? subs : REDDIT_BUILD_SUBS;
+  const feeds = use.map((sub) => ({ sub, url: `https://www.reddit.com/r/${sub}/top/.rss?t=week&limit=40` }));
+  const positions = Object.keys(REDDIT_BUILD_SEARCHES);
+  const per = Math.max(0, Math.min(positions.length, Number(env("FUT_KB_BUILD_REDDIT_POSITIONS") ?? 3)));
+  const start = (Math.floor(now / RUN_MS) * per) % positions.length;
+  for (let i = 0; i < per; i++) {
+    const q = encodeURIComponent(REDDIT_BUILD_SEARCHES[positions[(start + i) % positions.length]!]!);
+    // Newest first over the year, then cut to the build window below (Reddit's own windows are a week, a month or a year)
+    feeds.push({ sub: use[0]!, url: `https://www.reddit.com/r/${use[0]}/search.rss?q=${q}&restrict_sr=on&sort=new&t=year&limit=25` });
+  }
+  feeds.push({ sub: "EASportsFC", url: "https://www.reddit.com/r/EASportsFC/search.rss?q=%22pro+clubs%22+build&restrict_sr=on&sort=top&t=month&limit=25" });
+  return feeds;
+}
+
 const squash = (s: unknown, max: number) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 
 export const buildsFeedOn = (env: Env) => env("FUT_KB_BUILDS") !== "off";
 
 // ---------------------------------------------------------------- collecting
 
-const BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?cm|\d'\d{1,2}|skill points|attribute points|perks?|meta (st|cb|cdm|cm|cam|winger|striker|keeper|gk|lb|rb)|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|keeper|gk|fullback|full-back|lb|rb|position)|finisher|target man|spark|magician|maestro|creator|recycler|disruptor|marauder|progressor|boss|shot stopper|sweeper keeper|proclubsbuilder)\b/i;
+const BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?cm|\d'\d{1,2}|skill points|attribute points|perks?|meta (st|cb|cdm|cm|cam|winger|striker|keeper|gk|lb|rb)|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|keeper|goalkeeper|gk|fullback|full-back|wing-?back|lb|rb|position)|(gk|goalkeeper|keeper|fullback|full-back|wing-?back|cdm|box.to.box) (build|setup)|finisher|target man|spark|magician|maestro|creator|recycler|disruptor|marauder|progressor|boss|shot stopper|sweeper keeper|proclubsbuilder)\b/i;
 export const isBuildPost = (p: { title?: string; selftext?: string }) => BUILD_POST.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2000)}`);
 
 /** Pro Clubs build posts and (on YouTube hours) build videos, tagged area 'proclubs'. */
@@ -55,11 +101,7 @@ export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids:
   const out: CollectedSource[] = [];
   let failure: Error | null = null;
   if (use.reddit) {
-    const feeds = [
-      { sub: "ProClubs", url: "https://www.reddit.com/r/ProClubs/top/.rss?t=week&limit=40" },
-      { sub: "ProClubs", url: "https://www.reddit.com/r/ProClubs/search.rss?q=build&restrict_sr=on&sort=top&t=month&limit=25" },
-      { sub: "EASportsFC", url: "https://www.reddit.com/r/EASportsFC/search.rss?q=%22pro+clubs%22+build&restrict_sr=on&sort=top&t=month&limit=25" },
-    ];
+    const feeds = redditBuildFeeds(env, now);
     try {
       out.push(...await collectRedditRss(env, fetchFn, known, { feeds, filter: isBuildPost, threads: Number(env("FUT_KB_BUILD_THREADS_PER_RUN") ?? 4) }));
     } catch (e) { failure = e as Error; }
@@ -75,11 +117,11 @@ export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids:
   if (use.youtube) {
     try {
       const queries = (env("FUT_KB_BUILD_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
-      // Build videos come out less often than meta videos and stay useful for weeks: look back 60 days
-      const after = new Date(now - 60 * 86_400_000).toISOString();
+      // Build videos come out less often than meta videos and stay useful for weeks: the whole build window
+      const after = new Date(now - buildWindowDays(env) * 86_400_000).toISOString();
       // Up to 5 new videos per search, so every position gets its share instead of the most-watched striker videos
       const ids = new Set<string>();
-      for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_BUILD_QUERIES) {
+      for (const q of queries.length ? queries.slice(0, 10) : DEFAULT_BUILD_QUERIES) {
         const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "10", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
         const hits = ((found.items ?? []) as { id?: { videoId?: string } }[]).map((i) => i.id?.videoId).filter((id): id is string => !!id && !ids.has(id));
         const seen = hits.length ? await known(hits).catch(() => new Set<string>()) : new Set<string>();
@@ -89,9 +131,10 @@ export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids:
     } catch (e) { failure ??= e as Error; }
   }
   if (!out.length && failure) throw failure;
-  // One row per post or video (a post can be in more than one feed)
+  // One row per post or video (a post can be in more than one feed), FC 27 and inside the build window only
+  const since = now - buildWindowDays(env) * 86_400_000;
   const unique = new Map<string, CollectedSource & { area: "proclubs" }>();
-  for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
+  for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`) && !(Date.parse(s.published_at) < since) && !olderGameTitle(s.title)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
   return [...unique.values()];
 }
 
@@ -165,7 +208,7 @@ function buildReaderPrompt(): string {
   return [
     "You read EA SPORTS FC 27 Pro Clubs (Clubs) community posts, video descriptions and their comments, and write down the Virtual Pro builds people recommend or warn against, for a knowledge bank that shows the community's meta build for each position. Return JSON only.",
     "",
-    "relevant: false when the source has no Pro Clubs build in it (Ultimate Team, career mode, memes, complaints with no build); then builds is empty.",
+    "relevant: false when the source has no Pro Clubs build in it (Ultimate Team, career mode, memes, complaints with no build), or its builds are for FC 26 or an older game (level 100 caps, FC 26 archetypes); then builds is empty.",
     "summary: one plain sentence on what the source is about (under 25 words).",
     "builds: up to 12, one per build per position the source describes:",
     `- position: ST (striker, CF), W (winger: LW, RW, LM, RM), CAM, CM (box-to-box), CDM, FB (full-back or wing-back), CB, GK.`,
@@ -244,7 +287,7 @@ export async function saveBuildReading(db: Rpc, id: string, reading: BuildReadin
 
 // ---------------------------------------------------------------- the meta builds
 
-export async function loadMetaBuilds(db: Rpc, days = 180, now = Date.now()) {
+export async function loadMetaBuilds(db: Rpc, days = BUILD_WINDOW_DAYS, now = Date.now()) {
   const { data, error } = await db.rpc("kb_meta_build_rows", { p_days: days });
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   const rows = (Array.isArray(data) ? data : []) as BuildRow[];

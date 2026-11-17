@@ -671,14 +671,14 @@ export const TOOLS: Tool<Ctx>[] = [
       type: "object",
       properties: {
         position: { type: "string", enum: [...META_POSITION_KEYS], description: "One position; leave out for all of them." },
-        days: { type: "integer", description: "Only builds from the last N days (default 180)." },
+        days: { type: "integer", description: "Only builds from the last N days (default 63, the last 9 weeks: FC 27 builds only)." },
       },
       additionalProperties: false,
     },
     run: async (args, ctx) => {
       const position = str(args.position);
       if (position && !isMetaPosition(position)) throw new ToolError(`position must be one of ${META_POSITION_KEYS.join(", ")}.`);
-      const out = await loadMetaBuilds(ctx.db.schema("fut"), clampInt(args.days, 180, 7, 730));
+      const out = await loadMetaBuilds(ctx.db.schema("fut"), clampInt(args.days, 63, 7, 730));
       const list = out.positions.filter((m) => !position || m.position === position);
       return {
         days: out.days,

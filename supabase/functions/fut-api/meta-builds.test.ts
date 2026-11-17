@@ -210,6 +210,11 @@ Deno.test("public meta-builds function and adding a build source on the website"
     // A build link alone is enough
     eq((await add({ url: pcbLink, area: "proclubs", share: true })).status, 202);
     eq((await add({ url: pcbLink, area: "fut" })).status, 400, "an Ultimate Team source still needs text");
+    // TikTok: the caption has to be pasted in (its embed API doesn't give it)
+    const tiktok = await add({ url: "https://www.tiktok.com/@someone/video/7688461037280038176", area: "proclubs" });
+    eq(tiktok.status, 400);
+    ok(/TikTok doesn't let apps read/.test(JSON.stringify(tiktok.data)), JSON.stringify(tiktok.data));
+    eq((await add({ url: "https://www.tiktok.com/@someone/video/7688461037280038176", area: "proclubs", text: "Sweeper Keeper GK build: 6'5, Footwork+ and Far Reach, max reactions and diving." })).status, 202);
     // Nobody said which bank: a build link is Pro Clubs on its own
     eq((await add({ url: pcbLink })).data.data.area, "proclubs");
 
@@ -251,7 +256,7 @@ Deno.test("build collector: one search per position, five new videos each, and t
   // The first seed video is already in the bank
   const known = (ids: string[]) => Promise.resolve(new Set(ids.filter((id) => id === BUILD_SEED_VIDEOS[0])));
   const got = await collectBuildSources(env, fetcher as never, known, { reddit: false, youtube: true, seed: true });
-  eq(searches.length, 8);
+  eq(searches.length, 10, "one per position, a second for keepers and full-backs");
   ok(DEFAULT_BUILD_QUERIES.some((q) => /goalkeeper/i.test(q)) && DEFAULT_BUILD_QUERIES.some((q) => /fullback/i.test(q)));
   eq(got.filter((s) => BUILD_SEED_VIDEOS.includes(s.external_id)).length, BUILD_SEED_VIDEOS.length - 1);
   eq(got.filter((s) => s.external_id.startsWith("q7")).length, 5, "five per search");
@@ -260,4 +265,45 @@ Deno.test("build collector: one search per position, five new videos each, and t
   searches.length = 0;
   await collectBuildSources(env, fetcher as never, () => Promise.resolve(new Set(BUILD_SEED_VIDEOS)), { reddit: false, youtube: false, seed: true });
   eq(searches.length, 0);
+});
+
+Deno.test("Reddit build feeds: r/FIFAClubs and r/ProClubs, three positions' searches a run, every position in turn", async () => {
+  const { redditBuildFeeds, REDDIT_BUILD_SEARCHES } = await import("../_shared/fut/meta-builds.ts");
+  const env = (_k: string) => undefined;
+  const run = 3 * 3_600_000;
+  const first = redditBuildFeeds(env, 0);
+  eq(first.slice(0, 2).map((f) => f.sub), ["FIFAClubs", "ProClubs"]);
+  ok(first.every((f) => f.url.startsWith("https://www.reddit.com/r/")));
+  const searched = new Set<string>();
+  for (let i = 0; i < 3; i++) {
+    const feeds = redditBuildFeeds(env, i * run).filter((f) => f.url.includes("/r/FIFAClubs/search.rss"));
+    eq(feeds.length, 3);
+    for (const f of feeds) searched.add(decodeURIComponent(new URL(f.url).searchParams.get("q")!));
+  }
+  eq(searched.size, Object.keys(REDDIT_BUILD_SEARCHES).length, "every position searched within three runs");
+  const own = redditBuildFeeds((k) => k === "FUT_KB_BUILD_SUBS" ? "ProClubs, bad sub!" : undefined, 0);
+  eq(own[0]!.sub, "ProClubs");
+  ok(own.every((f) => !f.url.includes("bad")));
+});
+
+Deno.test("FC 27 builds only, from the build window (9 weeks unless FUT_KB_BUILD_DAYS says otherwise)", async () => {
+  const { collectBuildSources, olderGameTitle, buildWindowDays, BUILD_SEED_VIDEOS } = await import("../_shared/fut/meta-builds.ts");
+  ok(olderGameTitle("The BEST Level 100 Sweeper Keeper GK Build | FC26 Pro Clubs"));
+  ok(olderGameTitle("EA FC 25 best CB build") && olderGameTitle("FIFA 23 pro clubs striker"));
+  ok(!olderGameTitle("BEST CB BUILD FOR LVL 55 | EAFC 27 Clubs") && !olderGameTitle("FC 26 vs FC 27: what changed for CBs") && !olderGameTitle("Best Boss CB build"));
+  eq([buildWindowDays(() => undefined), buildWindowDays(() => "30"), buildWindowDays(() => "3")], [63, 30, 63]);
+  const day = 86_400_000;
+  const videos: Record<string, { title: string; at: number }> = {
+    [BUILD_SEED_VIDEOS[0]!]: { title: "Level 55 GK build | FC27 Pro Clubs", at: NOW - 10 * day },
+    [BUILD_SEED_VIDEOS[1]!]: { title: "Level 100 GK build | FC26 Pro Clubs", at: NOW - 10 * day },
+    [BUILD_SEED_VIDEOS[2]!]: { title: "Old GK build", at: NOW - 80 * day },
+  };
+  const fetcher = (url: string) => {
+    const ids = new URL(url).searchParams.get("id")!.split(",").filter((id) => videos[id]);
+    return Promise.resolve(new Response(JSON.stringify({ items: ids.map((id) => ({ id, snippet: { title: videos[id]!.title, publishedAt: new Date(videos[id]!.at).toISOString() }, statistics: { viewCount: "1", commentCount: "0" } })) })));
+  };
+  const got = await collectBuildSources((k) => ({ YOUTUBE_API_KEY: "y" } as Record<string, string>)[k], fetcher as never, () => Promise.resolve(new Set()), { reddit: false, youtube: false, seed: true }, NOW);
+  eq(got.map((s) => s.external_id), [BUILD_SEED_VIDEOS[0]], "the FC 26 video and the one older than 9 weeks are left out");
+  const wide = await collectBuildSources((k) => ({ YOUTUBE_API_KEY: "y", FUT_KB_BUILD_DAYS: "120" } as Record<string, string>)[k], fetcher as never, () => Promise.resolve(new Set()), { reddit: false, youtube: false, seed: true }, NOW);
+  eq(wide.length, 2, "a wider window keeps the older FC 27 video, never the FC 26 one");
 });

@@ -15,9 +15,11 @@ import { META_POSITIONS, type MetaBuild, type MetaPosition, type MetaSource } fr
 import { cn } from "@/lib/utils";
 
 export interface MetaBuildsResponse { days: number; builds: number; positions: MetaBuild[]; generated_at: string }
-export const META_PERIODS = [30, 90, 180, 365] as const;
+// 63 days (9 weeks) is the default: FC 27 builds only (Jeff, 2026-11-17)
+export const META_PERIODS = [30, 63, 90, 180, 365] as const;
+export const META_DEFAULT_DAYS = 63;
 
-export function useMetaBuilds(days = 180) {
+export function useMetaBuilds(days = META_DEFAULT_DAYS) {
   return useQuery({
     queryKey: ["meta-builds", days],
     queryFn: async () => {
@@ -114,7 +116,7 @@ export function MetaBuildCard({ meta, onLoad, compact = false, className }: { me
 }
 
 /** Position picker + the meta build for it. */
-export function CommunityMetaBuilds({ onLoad, compact = false, initial = "ST", days = 180 }: { onLoad?: (b: Build) => void; compact?: boolean; initial?: MetaPosition; days?: number }) {
+export function CommunityMetaBuilds({ onLoad, compact = false, initial = "ST", days = META_DEFAULT_DAYS }: { onLoad?: (b: Build) => void; compact?: boolean; initial?: MetaPosition; days?: number }) {
   const [position, setPosition] = useState<MetaPosition>(initial);
   const q = useMetaBuilds(days);
   const meta = q.data?.positions?.find((p) => p.position === position);

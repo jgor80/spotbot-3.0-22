@@ -11,7 +11,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-export const PERIODS = [30, 90, 180, 365];
+export const PERIODS = [30, 63, 90, 180, 365];
 const CACHE_MS = 10 * 60_000; // new builds arrive every 3 hours at most
 const cached = new Map<number, { at: number; body: unknown }>();
 export const clearCache = () => cached.clear();
@@ -27,7 +27,7 @@ export function createHandler(getDb: () => Db) {
     if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
     if (req.method !== "GET") return json({ error: "GET only" }, 405);
     const asked = Number(new URL(req.url).searchParams.get("days"));
-    const days = PERIODS.includes(asked) ? asked : 180;
+    const days = PERIODS.includes(asked) ? asked : 63; // 9 weeks: FC 27 builds only
     try {
       const hit = cached.get(days);
       if (hit && Date.now() - hit.at < CACHE_MS) return json(hit.body);

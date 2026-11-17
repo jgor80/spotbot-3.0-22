@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { futApi, futKeys } from "@/lib/futApi";
 import { ErrorNotice } from "@/components/fut/FutShared";
-import { CommunityMetaBuilds, META_PERIODS } from "@/components/build/CommunityMetaBuilds";
+import { CommunityMetaBuilds, META_DEFAULT_DAYS, META_PERIODS } from "@/components/build/CommunityMetaBuilds";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,15 +39,15 @@ function AddBuildSource() {
 }
 
 export function ProClubsBuilds() {
-  const [days, setDays] = useState<number>(180);
+  const [days, setDays] = useState<number>(META_DEFAULT_DAYS);
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="max-w-2xl text-sm text-muted-foreground">
-        What the Pro Clubs community says is the best Virtual Pro build for each position: archetype, body, skill moves, PlayStyles and the attributes to max, from r/ProClubs and Pro Clubs build videos. Newer builds count more.
+        What the Pro Clubs community says is the best Virtual Pro build for each position: archetype, body, skill moves, PlayStyles and the attributes to max, from r/FIFAClubs, r/ProClubs and Pro Clubs build videos. Newer builds count more.
       </p>
       <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
         <SelectTrigger className="w-40" aria-label="Period"><SelectValue /></SelectTrigger>
-        <SelectContent>{META_PERIODS.map((d) => <SelectItem key={d} value={String(d)}>Last {d} days</SelectItem>)}</SelectContent>
+        <SelectContent>{META_PERIODS.map((d) => <SelectItem key={d} value={String(d)}>{d === 63 ? "Last 9 weeks" : `Last ${d} days`}</SelectItem>)}</SelectContent>
       </Select>
     </div>
     <CommunityMetaBuilds key={days} days={days} />

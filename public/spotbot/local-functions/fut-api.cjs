@@ -12533,13 +12533,16 @@ var DEFAULT_BUILD_QUERIES = [
   "FC 27 Clubs best CDM build level 55",
   "FC 27 Clubs best fullback LB RB build",
   "FC 27 Clubs best CB centre back build level 55",
-  "FC 27 Clubs best goalkeeper GK build"
+  "FC 27 Clubs best goalkeeper GK build",
+  // The two thinnest positions get a second search (Jeff, 2026-11-17: "scour ... for more positional build
+  // recommendations"): 10 searches x 4 runs = 4,000 units, still inside the daily quota with the Ultimate Team searches.
+  "FC 27 Pro Clubs sweeper keeper shot stopper build",
+  "FC 27 Pro Clubs wingback full back marauder progressor build"
 ];
 var BUILD_SEED_VIDEOS = [
   "z_bTu7cqEqI",
   "8ayxW3GKsWg",
   "u01yJjdgX1g",
-  "Ao_UEEEZOeE",
   "Q2UcXD7kq40",
   "fptZQH-b5xY",
   "jzlOG_OIy90",
@@ -12572,19 +12575,47 @@ var BUILD_SEED_VIDEOS = [
   "E18UOuXzBwo",
   "2FgIycXv6gw"
 ];
+var REDDIT_BUILD_SEARCHES = {
+  GK: "(goalkeeper OR keeper OR GK) build",
+  FB: '(fullback OR "full back" OR wingback OR LB OR RB) build',
+  CB: '(CB OR "centre back" OR "center back" OR defender) build',
+  CDM: "(CDM OR recycler OR disruptor) build",
+  CM: '(CM OR "box to box" OR maestro) build',
+  CAM: "(CAM OR creator OR magician) build",
+  W: "(winger OR LW OR RW OR spark) build",
+  ST: "(striker OR ST OR finisher OR target) build"
+};
+var REDDIT_BUILD_SUBS = ["FIFAClubs", "ProClubs"];
+var RUN_MS = 3 * 36e5;
+var BUILD_WINDOW_DAYS = 63;
+var buildWindowDays = (env) => {
+  const n2 = Math.round(Number(env("FUT_KB_BUILD_DAYS")));
+  return Number.isFinite(n2) && n2 >= 7 && n2 <= 365 ? n2 : BUILD_WINDOW_DAYS;
+};
+var olderGameTitle = (title) => /\b(e?a?\s?fc\s?'?2[0-6]|fifa\s?'?\d{2})\b/i.test(title) && !/\bfc\s?'?27\b/i.test(title);
+function redditBuildFeeds(env, now2 = Date.now()) {
+  const subs = (env("FUT_KB_BUILD_SUBS") ?? "").split(",").map((s) => s.trim()).filter((s) => /^[A-Za-z0-9_]{2,30}$/.test(s));
+  const use = subs.length ? subs : REDDIT_BUILD_SUBS;
+  const feeds = use.map((sub) => ({ sub, url: `https://www.reddit.com/r/${sub}/top/.rss?t=week&limit=40` }));
+  const positions = Object.keys(REDDIT_BUILD_SEARCHES);
+  const per = Math.max(0, Math.min(positions.length, Number(env("FUT_KB_BUILD_REDDIT_POSITIONS") ?? 3)));
+  const start = Math.floor(now2 / RUN_MS) * per % positions.length;
+  for (let i = 0; i < per; i++) {
+    const q = encodeURIComponent(REDDIT_BUILD_SEARCHES[positions[(start + i) % positions.length]]);
+    feeds.push({ sub: use[0], url: `https://www.reddit.com/r/${use[0]}/search.rss?q=${q}&restrict_sr=on&sort=new&t=year&limit=25` });
+  }
+  feeds.push({ sub: "EASportsFC", url: "https://www.reddit.com/r/EASportsFC/search.rss?q=%22pro+clubs%22+build&restrict_sr=on&sort=top&t=month&limit=25" });
+  return feeds;
+}
 var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 var buildsFeedOn = (env) => env("FUT_KB_BUILDS") !== "off";
-var BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?cm|\d'\d{1,2}|skill points|attribute points|perks?|meta (st|cb|cdm|cm|cam|winger|striker|keeper|gk|lb|rb)|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|keeper|gk|fullback|full-back|lb|rb|position)|finisher|target man|spark|magician|maestro|creator|recycler|disruptor|marauder|progressor|boss|shot stopper|sweeper keeper|proclubsbuilder)\b/i;
+var BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?cm|\d'\d{1,2}|skill points|attribute points|perks?|meta (st|cb|cdm|cm|cam|winger|striker|keeper|gk|lb|rb)|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|keeper|goalkeeper|gk|fullback|full-back|wing-?back|lb|rb|position)|(gk|goalkeeper|keeper|fullback|full-back|wing-?back|cdm|box.to.box) (build|setup)|finisher|target man|spark|magician|maestro|creator|recycler|disruptor|marauder|progressor|boss|shot stopper|sweeper keeper|proclubsbuilder)\b/i;
 var isBuildPost = (p) => BUILD_POST.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2e3)}`);
 async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) {
   const out = [];
   let failure = null;
   if (use.reddit) {
-    const feeds = [
-      { sub: "ProClubs", url: "https://www.reddit.com/r/ProClubs/top/.rss?t=week&limit=40" },
-      { sub: "ProClubs", url: "https://www.reddit.com/r/ProClubs/search.rss?q=build&restrict_sr=on&sort=top&t=month&limit=25" },
-      { sub: "EASportsFC", url: "https://www.reddit.com/r/EASportsFC/search.rss?q=%22pro+clubs%22+build&restrict_sr=on&sort=top&t=month&limit=25" }
-    ];
+    const feeds = redditBuildFeeds(env, now2);
     try {
       out.push(...await collectRedditRss(env, fetchFn, known, { feeds, filter: isBuildPost, threads: Number(env("FUT_KB_BUILD_THREADS_PER_RUN") ?? 4) }));
     } catch (e) {
@@ -12603,9 +12634,9 @@ async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) 
   if (use.youtube) {
     try {
       const queries = (env("FUT_KB_BUILD_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
-      const after = new Date(now2 - 60 * 864e5).toISOString();
+      const after = new Date(now2 - buildWindowDays(env) * 864e5).toISOString();
       const ids = /* @__PURE__ */ new Set();
-      for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_BUILD_QUERIES) {
+      for (const q of queries.length ? queries.slice(0, 10) : DEFAULT_BUILD_QUERIES) {
         const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "10", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
         const hits2 = (found.items ?? []).map((i) => i.id?.videoId).filter((id3) => !!id3 && !ids.has(id3));
         const seen = hits2.length ? await known(hits2).catch(() => /* @__PURE__ */ new Set()) : /* @__PURE__ */ new Set();
@@ -12617,8 +12648,9 @@ async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) 
     }
   }
   if (!out.length && failure) throw failure;
+  const since = now2 - buildWindowDays(env) * 864e5;
   const unique = /* @__PURE__ */ new Map();
-  for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
+  for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`) && !(Date.parse(s.published_at) < since) && !olderGameTitle(s.title)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
   return [...unique.values()];
 }
 function extractBuildLinks(text5) {
@@ -12685,7 +12717,7 @@ function buildReaderPrompt() {
   return [
     "You read EA SPORTS FC 27 Pro Clubs (Clubs) community posts, video descriptions and their comments, and write down the Virtual Pro builds people recommend or warn against, for a knowledge bank that shows the community's meta build for each position. Return JSON only.",
     "",
-    "relevant: false when the source has no Pro Clubs build in it (Ultimate Team, career mode, memes, complaints with no build); then builds is empty.",
+    "relevant: false when the source has no Pro Clubs build in it (Ultimate Team, career mode, memes, complaints with no build), or its builds are for FC 26 or an older game (level 100 caps, FC 26 archetypes); then builds is empty.",
     "summary: one plain sentence on what the source is about (under 25 words).",
     "builds: up to 12, one per build per position the source describes:",
     `- position: ST (striker, CF), W (winger: LW, RW, LM, RM), CAM, CM (box-to-box), CDM, FB (full-back or wing-back), CB, GK.`,
@@ -13323,6 +13355,9 @@ ${input.title ?? ""}
 ${fetched ? `${fetched.title}
 ${fetched.body}` : text5}`);
   const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
+  if (!fetched && text5.length < 40 && !buildLink && /^https:\/\/([a-z]+\.)?tiktok\.com\//i.test(url)) {
+    throw new FutError("TikTok doesn't let apps read a video's caption. Paste the caption or the build (archetype, height, PlayStyles, attributes) into the text box with the link.");
+  }
   if (!fetched && text5.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
   const title = squash2(input.title, 300) || fetched?.title || squash2(text5.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);
