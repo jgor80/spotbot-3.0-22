@@ -127,25 +127,24 @@ export const CAPS: Record<string, number[]> = {
 };
 
 // Skill move and weak foot stars: each archetype starts on `start` stars and can buy up to `max`, paid in AP
-// from the same budget as attributes. `cost[i]` is the AP for the (i+1)th extra star. Totals for all 13 are
-// published (PRO11 archetype pages, Pro Clubs HQ); the star-by-star split is published for the Finisher,
-// Magician, Spark, Maestro and Disruptor, and every other split with two or more stars follows the same two
-// price ladders. Splits marked "inferred" add up to the published total but weren't published star by star.
-export interface StarRule { start: number; max: number; cost: number[]; inferred?: boolean }
+// from the same budget as attributes. `cost[i]` is the AP for the (i+1)th extra star. Pro Clubs Builder
+// publishes every star's price for all 13 archetypes and Pro Clubs HQ's totals match all of them. PRO11 gives
+// the Target's skill moves as 65 AP (10/20/35) where the other two give 48 (8/15/25); 48 is used.
+export interface StarRule { start: number; max: number; cost: number[] }
 export const STARS: Record<string, { skillMoves: StarRule; weakFoot: StarRule }> = {
-  shotstopper: { skillMoves: { start: 1, max: 2, cost: [5] }, weakFoot: { start: 1, max: 3, cost: [10, 20], inferred: true } },
-  sweeperkeeper: { skillMoves: { start: 1, max: 3, cost: [5, 10], inferred: true }, weakFoot: { start: 1, max: 4, cost: [8, 15, 25], inferred: true } },
+  shotstopper: { skillMoves: { start: 1, max: 2, cost: [5] }, weakFoot: { start: 1, max: 3, cost: [10, 20] } },
+  sweeperkeeper: { skillMoves: { start: 1, max: 3, cost: [5, 10] }, weakFoot: { start: 1, max: 4, cost: [8, 15, 25] } },
   progressor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 4, cost: [25] } },
-  boss: { skillMoves: { start: 2, max: 3, cost: [10] }, weakFoot: { start: 2, max: 4, cost: [20, 35], inferred: true } },
+  boss: { skillMoves: { start: 2, max: 3, cost: [10] }, weakFoot: { start: 2, max: 4, cost: [20, 35] } },
   marauder: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   disruptor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
-  recycler: { skillMoves: { start: 2, max: 4, cost: [8, 15], inferred: true }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  recycler: { skillMoves: { start: 2, max: 4, cost: [8, 15] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   maestro: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   creator: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   spark: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   magician: { skillMoves: { start: 3, max: 5, cost: [20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   finisher: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
-  target: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 2, max: 5, cost: [20, 35, 50], inferred: true } },
+  target: { skillMoves: { start: 2, max: 5, cost: [8, 15, 25] }, weakFoot: { start: 2, max: 5, cost: [20, 35, 50] } },
 };
 
 // Height (cm) and weight (kg): allowed range and the default each archetype starts at.
@@ -183,12 +182,13 @@ export const BODY_EFFECTS = {
 
 // AcceleRATE (community-measured for FC 27, men's heights; uses in-match values): Explosive needs all of
 // height <= 182 cm, Agility 65+, Agility at least 10 above Strength, Acceleration 80+. Lengthy needs all of
-// height >= 183 cm, Strength 65+, Strength at least 4 above Agility, Acceleration 40+. Everything else is
-// Controlled. Lengthy's minimum height is disputed: 183 cm (FC 27 guide) vs 185 cm (an FC 26 change some
-// sources still quote), so the planner uses 183 and says so.
+// height >= 185 cm, Strength 65+, Strength at least 4 above Agility, Acceleration 40+. Everything else is
+// Controlled, so 183 and 184 cm are always Controlled. Lengthy's 185 cm is EA's own number: FC 26 Title Update
+// 1.4.0 (January 2026) set it for men's players, and FIFAUTeam lists 185 for FC 27. EA hasn't restated it for
+// FC 27, and Pro Clubs HQ and Pro Clubs Builder still show the older 183.
 export const ACCELERATE = {
   explosive: { maxHeight: 182, agility: 65, agilityOverStrength: 10, acceleration: 80 },
-  lengthy: { minHeight: 183, strength: 65, strengthOverAgility: 4, acceleration: 40 },
+  lengthy: { minHeight: 185, strength: 65, strengthOverAgility: 4, acceleration: 40 },
 } as const;
 
 // Masteries: levelling an archetype adds +1 to a pair of attributes on every archetype you own (the pairs
@@ -348,12 +348,11 @@ export const FACILITY_BOOST_MAX = 10;
 
 // What we still don't know, shown on the page
 export const UNCONFIRMED_NOTES = [
-  "Attribute ceilings come from one community source (Pro Clubs HQ, read in game).",
+  "Attribute ceilings: two community sites (Pro Clubs HQ, Pro Clubs Builder) agree on all 387; EA publishes none.",
   "Goalkeeper PlayStyle requirements (FC 26 values; a keeper's list hasn't been read in FC 27).",
-  "The third requirement of Joker and Invader, and one requirement each of Hunter and Runner, since EA removed Attacking Positioning.",
-  "The star-by-star split of some skill move and weak foot prices (the totals are published).",
-  "AP prices for keepers' Long Shots and Volleys.",
-  "Lengthy AcceleRATE's minimum height: 183 cm here; some sources say 185 cm for FC 27.",
+  "The third requirement of Joker and Invader since EA removed Attacking Positioning: no source has it. Hunter's Balance and Runner's Aggression come from one player's report.",
+  "The Target's skill move prices: 48 AP for 5 stars here (two sources); one source says 65.",
+  "Lengthy AcceleRATE's minimum height: 185 cm here (EA's FC 26 number, not restated for FC 27); two community sites still show 183 cm.",
   "Height and weight shifts are FC 26's, reported unchanged in FC 27.",
   "Whether Mastery points count towards PlayStyle and Specialization targets, and whether they can pass a ceiling (the planner assumes yes, up to 99).",
   "Club facility boost sizes: type in what your club has.",

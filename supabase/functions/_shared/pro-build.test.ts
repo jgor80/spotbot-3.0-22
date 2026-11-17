@@ -271,7 +271,7 @@ Deno.test("skill move and weak foot stars: each archetype's range, and extra sta
   const TOTALS: Record<string, [string, number, string, number]> = {
     shotstopper: ["1-2", 5, "1-3", 30], sweeperkeeper: ["1-3", 15, "1-4", 48], progressor: ["2-4", 30, "3-4", 25], boss: ["2-3", 10, "2-4", 55],
     marauder: ["2-5", 65, "3-5", 65], disruptor: ["2-4", 30, "3-5", 85], recycler: ["2-4", 23, "3-5", 65], maestro: ["2-5", 65, "3-5", 65],
-    creator: ["2-5", 65, "3-5", 65], spark: ["3-5", 40, "3-5", 65], magician: ["3-5", 55, "3-5", 65], finisher: ["3-5", 40, "3-5", 85], target: ["2-5", 65, "2-5", 105],
+    creator: ["2-5", 65, "3-5", 65], spark: ["3-5", 40, "3-5", 65], magician: ["3-5", 55, "3-5", 65], finisher: ["3-5", 40, "3-5", 85], target: ["2-5", 48, "2-5", 105],
   };
   for (const a of ARCHETYPES) {
     const sm = starRule(a.key, "skillMoves"), wf = starRule(a.key, "weakFoot");
@@ -358,4 +358,12 @@ Deno.test("limit to my level: edits can't spend more AP than the level gives", (
   const overB = normaliseBuild({ ...big });
   const less = normaliseBuild({ ...overB, points: { ...overB.points, finishing: 29 } });
   eq(limitToLevel(overB, less), less);
+});
+
+Deno.test("Lengthy needs 185 cm: 183 and 184 cm are Controlled", () => {
+  const at = (h: number) => accelerateType(normaliseBuild({ archetype: "target", heightCm: h, weightKg: 80, points: { strength: 15 } }));
+  eq(at(185), "Lengthy");
+  eq([at(183), at(184)], ["Controlled", "Controlled"]);
+  // Published star totals: the Target's skill moves are 48 AP to 5 stars
+  eq(starCost("target", "skillMoves", 5), 48);
 });

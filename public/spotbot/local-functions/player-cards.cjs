@@ -4149,19 +4149,19 @@ var CAPS = {
   target: [90, 92, 96, 96, 99, 96, 96, 99, 92, 90, 99, 96, 92, 90, 92, 92, 99, 92, 92, 96, 82, 99, 82, 75, 75, 96, 92, 99, 92, 0, 0, 0, 0, 0]
 };
 var STARS = {
-  shotstopper: { skillMoves: { start: 1, max: 2, cost: [5] }, weakFoot: { start: 1, max: 3, cost: [10, 20], inferred: true } },
-  sweeperkeeper: { skillMoves: { start: 1, max: 3, cost: [5, 10], inferred: true }, weakFoot: { start: 1, max: 4, cost: [8, 15, 25], inferred: true } },
+  shotstopper: { skillMoves: { start: 1, max: 2, cost: [5] }, weakFoot: { start: 1, max: 3, cost: [10, 20] } },
+  sweeperkeeper: { skillMoves: { start: 1, max: 3, cost: [5, 10] }, weakFoot: { start: 1, max: 4, cost: [8, 15, 25] } },
   progressor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 4, cost: [25] } },
-  boss: { skillMoves: { start: 2, max: 3, cost: [10] }, weakFoot: { start: 2, max: 4, cost: [20, 35], inferred: true } },
+  boss: { skillMoves: { start: 2, max: 3, cost: [10] }, weakFoot: { start: 2, max: 4, cost: [20, 35] } },
   marauder: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   disruptor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
-  recycler: { skillMoves: { start: 2, max: 4, cost: [8, 15], inferred: true }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  recycler: { skillMoves: { start: 2, max: 4, cost: [8, 15] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   maestro: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   creator: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   spark: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   magician: { skillMoves: { start: 3, max: 5, cost: [20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
   finisher: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
-  target: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 2, max: 5, cost: [20, 35, 50], inferred: true } }
+  target: { skillMoves: { start: 2, max: 5, cost: [8, 15, 25] }, weakFoot: { start: 2, max: 5, cost: [20, 35, 50] } }
 };
 var BODY = {
   finisher: { h: [164, 190], w: [70, 90], startH: 177, startW: 80 },
