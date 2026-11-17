@@ -22,24 +22,25 @@ source" means it is published once and nothing contradicts it.
 | AP price bands (1-2 AP up to 60, 35-50 AP for the 99th point) | Confirmed | Pro Clubs HQ and Pro Clubs Builder publish the same 15 bands |
 | Price tier of every attribute on every archetype (387 values) | Confirmed | Matches Pro Clubs HQ's data exactly, and every attribute EA lists as dearer or cheaper on 19 Oct sits where EA's note says |
 | Starting value of every attribute (387 values) | Confirmed | Matches Pro Clubs HQ exactly; PRO11 re-checked them in October |
-| Attribute ceilings (387 values) | One source, **fixed in this audit** | Pro Clubs HQ ceiling tables (PRO11 republishes them). The planner used to know 35 ceilings and treat the other 276 below 99 as 99. The full table reproduces every published "which archetypes can reach this PlayStyle" list |
-| Skill move and weak foot stars | One source, **fixed in this audit** | Each archetype has its own starting stars and maximum, and extra stars cost AP from the same budget (Finisher: 5★ skill moves 40 AP, 5★ weak foot 85 AP). The planner used to allow 1-5 on everything for free. Totals for all 13 are published; the star-by-star split is published for five archetypes and inferred for six rows |
+| Attribute ceilings (387 values) | Two sites agree | Pro Clubs HQ ceiling tables (PRO11 republishes them) and Pro Clubs Builder's own table: all 387 identical (checked 17 November). EA publishes none, and the two sites may share an origin. The full table reproduces every published "which archetypes can reach this PlayStyle" list |
+| Skill move and weak foot stars | Two sites agree, one row disputed | Each archetype has its own starting stars and maximum, and extra stars cost AP from the same budget (Finisher: 5★ skill moves 40 AP, 5★ weak foot 85 AP). Pro Clubs Builder publishes every star's price for all 13 and Pro Clubs HQ's totals match all of them. The Target's skill moves are 48 AP (8/15/25) on both; PRO11 says 65, so 48 is used |
 | Height and weight ranges and defaults | Confirmed | Pro Clubs HQ height and weight guide: all 13 identical |
 | Height and weight shifts (4 cm and 8 kg steps) | One source, carried over | Pro Clubs HQ says these are FC 26's shifts carried into FC 27, not re-measured |
+| Keepers' Long Shots and Volleys prices | One source | Pro Clubs HQ's keeper price lists (Shot Stopper 20 and 20 AP to the 60 ceiling, Sweeper Keeper 15 and 20) match the planner's tiers |
 | 30 outfield PlayStyle requirements | Confirmed | Pro Clubs HQ (read in FC 27) and PRO11 agree on every row |
-| 6 goalkeeper PlayStyle requirements | Not confirmed | FC 26 values: a keeper's list hasn't been read in FC 27 |
+| 6 goalkeeper PlayStyle requirements | Not confirmed | FC 26 values. Pro Clubs HQ says a keeper's list hasn't been read in FC 27, PRO11 defers to it, and no other FC 27 source was found (17 November) |
 | PlayStyle slots (5, 15, 40, 55), PlayStyle+ (20, 55), Signature Perks (10, 45) | Confirmed | Pro Clubs HQ ladder, PRO11 archetype pages |
 | Signatures (two per archetype since 22 Oct) and level-45 perks | Confirmed | Pro Clubs HQ archetype changes, PRO11 |
 | Mastery pairs | Confirmed (EA) | EA's own table in the Grounds deep dive, all 13 pairs in the same order |
 | Mastery milestones (10: +1 +1, 30: +1 second, 55: +1 first) | Confirmed | EA gives the level 10 example; Pro Clubs HQ read 30 and 55 in game |
 | 35 of 39 Specializations (92 / 90 / 90) and their AP costs | Confirmed | Pro Clubs HQ and PRO11 agree; the planner reproduces every published cost |
-| Joker, Invader, Hunter, Runner | Not confirmed | EA removed Attacking Positioning from Specialization requirements on 22 Oct and named no replacement. Hunter (Balance) and Runner (Aggression) come from one player report on the EA Forums; Joker and Invader are shown with two requirements. Pro Clubs HQ still lists Attacking Positioning for all four |
-| AcceleRATE thresholds | Confirmed, except one | Pro Clubs HQ and FIFAUTeam agree on everything but Lengthy's minimum height: 183 cm (Pro Clubs HQ, FC 26 value carried over) or 185 cm (FIFAUTeam says it changed in FC 27). The planner uses 183 |
+| Joker, Invader, Hunter, Runner | Not confirmed | EA removed Attacking Positioning from Specialization requirements on 22 Oct and named no replacement. Hunter (Balance) and Runner (Aggression) come from one player on the EA Forums, who saw them when the update went live, saw Attacking Positioning come back after the reset, then posted "Fixed now". Nobody has published Joker's or Invader's third requirement; Pro Clubs HQ, Pro Clubs Builder and FCClub still list Attacking Positioning for all four |
+| AcceleRATE thresholds | Confirmed for FC 26, not restated for FC 27 | Lengthy's minimum height is 185 cm: EA set it for men's players in FC 26 Title Update 1.4.0 (January 2026, "Strength minimum 65, Strength minus Agility at least 4, Acceleration minimum 40" unchanged) and FIFAUTeam lists 185 for FC 27. EA's FC 27 notes only restate the women's height. Pro Clubs HQ and Pro Clubs Builder still show 183, the pre-patch number. The planner uses 185 since 17 November |
 | Club facility boosts | Not confirmed | No source publishes FC 27 facility numbers (FCClub says the values can't be read yet), so they are typed in by hand |
 | Amps | Not modelled | EA: up to three at a time, timed, attribute boosts and on the top tiers PlayStyles and PlayStyle+ |
 | Levels past 55 | Estimate | FC 27 stops at 55. FC 26's AP for levels 56 to 100 (3,167 AP at 100; its first 55 levels pay exactly what FC 27's do) is used only to say "about level N" for a build that spends more than level 55 gives, and is labelled an estimate |
 
-Two assumptions the planner makes that no source settles: Mastery points count towards PlayStyle and
+Two assumptions the planner makes that no source settles (PRO11 and Pro Clubs HQ both say they haven't confirmed either): Mastery points count towards PlayStyle and
 Specialization targets, and they can lift an attribute past its ceiling (up to 99).
 
 Sources: EA SPORTS FC 27 The Grounds Deep Dive and The Grounds Developer Archetypes Update (ea.com);
@@ -90,7 +91,7 @@ the 39 Specialization costs.
 ## Added on top (November 2026)
 
 - **AcceleRATE** comes from the build, using in-match values: Explosive needs 182 cm or less, Agility 65+,
-  Agility at least 10 over Strength and Acceleration 80+; Lengthy needs 183 cm or more (some sources say 185),
+  Agility at least 10 over Strength and Acceleration 80+; Lengthy needs 185 cm or more (183 and 184 cm are always Controlled),
   Strength 65+, Strength at least 4 over Agility and Acceleration 40+; everything else is Controlled
   (`ACCELERATE` in `proClubsData.ts`).
 - **Masteries from other archetypes**: every archetype levelled to 10/30/55 adds its mastery to all builds.
