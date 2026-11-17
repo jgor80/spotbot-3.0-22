@@ -90,7 +90,8 @@ __export(proBuild_exports, {
   starsAp: () => starsAp,
   startValue: () => startValue,
   trainable: () => trainable,
-  trainedValue: () => trainedValue
+  trainedValue: () => trainedValue,
+  unlockValue: () => unlockValue
 });
 module.exports = __toCommonJS(proBuild_exports);
 
@@ -251,6 +252,7 @@ var ACCELERATE = {
   explosive: { maxHeight: 182, agility: 65, agilityOverStrength: 10, acceleration: 80 },
   lengthy: { minHeight: 185, strength: 65, strengthOverAgility: 4, acceleration: 40 }
 };
+var MASTERY_COUNTS_FOR_UNLOCKS = false;
 var MASTERY_MILESTONES = [
   { level: 10, first: 1, second: 1 },
   { level: 30, first: 0, second: 1 },
@@ -338,7 +340,7 @@ var spec = (archetype, name, plus, a, b, c, unconfirmed) => ({
 });
 var SPECIALIZATIONS = [
   spec("shotstopper", "Shot Stopper+", "Cross Claimer", "gkHandling", "jumping", "gkPositioning"),
-  spec("shotstopper", "Octopus", "Deflector", "gkDiving", "strength", "gkPositioning"),
+  spec("shotstopper", "Octopus", "Footwork", "gkDiving", "strength", "gkPositioning", "Gives Footwork+ since EA's 23 October fix, was Deflector+ (one community post)"),
   spec("shotstopper", "Spider", "1v1 Close Down", "gkReflexes", "acceleration", "agility"),
   spec("sweeperkeeper", "Sweeper Keeper+", "Far Throw", "gkDiving", "vision", "gkKicking"),
   spec("sweeperkeeper", "Launcher", "Long Ball Pass", "gkKicking", "longPassing", "gkReflexes"),
@@ -364,17 +366,17 @@ var SPECIALIZATIONS = [
   spec("creator", "Creator+", "Whipped Pass", "vision", "crossing", "longPassing"),
   spec("creator", "Architect", "Dead Ball", "crossing", "shotPower", "fkAccuracy"),
   spec("creator", "Sniper", "Power Shot", "shotPower", "finishing", "longShots"),
-  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
+  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", "curve", "Curve replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us)"),
   spec("spark", "Spark+", "Quick Step", "agility", "acceleration", "sprintSpeed"),
   spec("spark", "Ace", "Chip Shot", "finishing", "reactions", "ballControl"),
-  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
+  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", "sprintSpeed", "Sprint Speed replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us)"),
   spec("magician", "Magician+", "First Touch", "ballControl", "acceleration", "composure"),
   spec("magician", "Hotshot", "Power Shot", "shotPower", "finishing", "longShots"),
   spec("finisher", "Finisher+", "Chip Shot", "composure", "reactions", "ballControl"),
-  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning according to one player report"),
+  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us); an EA Forums player reported the same"),
   spec("finisher", "Presser", "Relentless", "stamina", "agility", "aggression"),
   spec("target", "Target+", "Acrobatic", "jumping", "agility", "volleys"),
-  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning according to one player report"),
+  spec("target", "Runner", "Rapid", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us); an EA Forums player reported the same. Gives Rapid+ since that fix, was Enforcer+"),
   spec("target", "Roamer", "Incisive Pass", "shortPassing", "vision", "longPassing")
 ];
 var FACILITY_BOOST_MAX = 10;
@@ -605,19 +607,21 @@ function limitToLevel(prev, next) {
   }
   return pts > (prev.points[key] ?? 0) ? { ...next, points: { ...next.points, [key]: pts } } : prev;
 }
+var unlockBonus = (b, key) => MASTERY_COUNTS_FOR_UNLOCKS ? masteryBonus(b, key) : 0;
+var unlockValue = (b, key) => MASTERY_COUNTS_FOR_UNLOCKS ? menuValue(b, key) : trainedValue(b, key);
 function raisePlan(b, req) {
   const missing = [];
   let ap = 0;
   for (const [k, need] of req) {
-    const have = menuValue(b, k);
+    const have = unlockValue(b, k);
     if (have >= need) continue;
     missing.push({ key: k, need, have });
-    if (!trainable(b.archetype, k) || need - masteryBonus(b, k) > attrCap(b.archetype, k)) {
+    if (!trainable(b.archetype, k) || need - unlockBonus(b, k) > attrCap(b.archetype, k)) {
       ap = NaN;
       continue;
     }
     const from = trainedValue(b, k);
-    ap += costBetween(b.archetype, k, from, need - masteryBonus(b, k));
+    ap += costBetween(b.archetype, k, from, need - unlockBonus(b, k));
   }
   return { missing, ap: Number.isNaN(ap) ? null : ap };
 }
@@ -625,7 +629,7 @@ function raiseFor(b, req) {
   const points = { ...b.points };
   for (const [k, need] of req) {
     if (!trainable(b.archetype, k)) continue;
-    const target = Math.min(attrCap(b.archetype, k), need - masteryBonus(b, k));
+    const target = Math.min(attrCap(b.archetype, k), need - unlockBonus(b, k));
     points[k] = Math.max(points[k] ?? 0, target - startValue(b.archetype, k));
   }
   return normaliseBuild({ ...b, points });
@@ -966,5 +970,6 @@ function importProClubsBuilder(linkOrCode) {
   starsAp,
   startValue,
   trainable,
-  trainedValue
+  trainedValue,
+  unlockValue
 });

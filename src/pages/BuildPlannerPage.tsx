@@ -53,6 +53,7 @@ import {
   startValue,
   trainable,
   trainedValue,
+  unlockValue,
   type AttrGroup,
   type Build,
   type StyleGroup,
@@ -858,7 +859,7 @@ export default function BuildPlannerPage() {
                     )}
                   </div>
                   <p className="mb-3 text-xs text-slate-400">
-                    Masteries carry over: every archetype you've taken to level {MASTERY_LEVELS[0]} adds to its two attributes on all your builds{MASTERY_LEVELS.length > 1 ? `, then more at ${MASTERY_LEVELS.slice(1).join(" and ")}` : ""}.
+                    Masteries carry over: every archetype you've taken to level {MASTERY_LEVELS[0]} adds to its two attributes on all your builds{MASTERY_LEVELS.length > 1 ? `, then more at ${MASTERY_LEVELS.slice(1).join(" and ")}` : ""}. They show on your attributes but don't count towards PlayStyle or Specialization targets.
                     {mine.signedIn
                       ? " Enter them once: they're saved to your account and used on every build, here and on your Graphics Studio cards. Your saved builds' levels count by themselves."
                       : " Sign in to save them once for every build; your saved builds' levels then count by themselves."}
@@ -978,7 +979,7 @@ export default function BuildPlannerPage() {
                       <div className="mb-3 text-xs text-amber-200">◆ {s.spec.plus}+</div>
                       <div className="mb-3 space-y-1.5">
                         {s.spec.req.map(([k, need]) => {
-                          const have = menuValue(build, k);
+                          const have = unlockValue(build, k);
                           return (
                             <div key={k} className="text-xs">
                               <div className="flex justify-between">
@@ -994,7 +995,7 @@ export default function BuildPlannerPage() {
                           );
                         })}
                       </div>
-                      {s.spec.unconfirmed && <p className="mb-2 text-[11px] text-slate-500">Not confirmed: {s.spec.unconfirmed}.</p>}
+                      {s.spec.unconfirmed && <p className="mb-2 text-[11px] text-slate-500">{s.spec.unconfirmed}.</p>}
                       <div className="mt-auto flex flex-wrap gap-2">
                         {s.met ? (
                           <button className={`${ghostBtn} px-3 py-1.5 text-xs`} onClick={() => set({ specialization: on ? null : s.spec.key })} aria-pressed={on}>

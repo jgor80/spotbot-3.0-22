@@ -3,7 +3,7 @@
 // share code (gafferbot.app/build?b=...). Builds from Pro Clubs Builder share links can be imported.
 import {
   ACCELERATE, AP_BY_LEVEL, AP_BY_LEVEL_ESTIMATE, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, BODY_STEP, CAPS, COST_BANDS,
-  COST_TIERS, ESTIMATE_SOURCE, FACILITY_BOOST_MAX, LEVEL_CAP, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
+  COST_TIERS, ESTIMATE_SOURCE, FACILITY_BOOST_MAX, LEVEL_CAP, MASTERIES, MASTERY_COUNTS_FOR_UNLOCKS, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
   SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, SPECIALIZATION_TARGETS, SPECIALIZATIONS, STARS, START_VALUES,
   type AttrKey, type PlayStyleDef, type Specialization, type StarRule, type StyleGroup,
 } from "./proClubsData.ts";
@@ -336,21 +336,25 @@ export function limitToLevel(prev: Build, next: Build): Build {
 }
 
 // ---------- Unlocks ----------
+// The value the game checks a PlayStyle or Specialization target against: the attribute you bought, with
+// Mastery points only if MASTERY_COUNTS_FOR_UNLOCKS says so. Body effects and facilities never count.
+const unlockBonus = (b: Build, key: string) => (MASTERY_COUNTS_FOR_UNLOCKS ? masteryBonus(b, key) : 0);
+export const unlockValue = (b: Build, key: string) => (MASTERY_COUNTS_FOR_UNLOCKS ? menuValue(b, key) : trainedValue(b, key));
 export interface Missing { key: string; need: number; have: number }
 // Points to add so every requirement is met; null when one is above the archetype's cap
 function raisePlan(b: Build, req: [string, number][]): { missing: Missing[]; ap: number | null } {
   const missing: Missing[] = [];
   let ap = 0;
   for (const [k, need] of req) {
-    const have = menuValue(b, k);
+    const have = unlockValue(b, k);
     if (have >= need) continue;
     missing.push({ key: k, need, have });
-    if (!trainable(b.archetype, k) || need - masteryBonus(b, k) > attrCap(b.archetype, k)) {
+    if (!trainable(b.archetype, k) || need - unlockBonus(b, k) > attrCap(b.archetype, k)) {
       ap = NaN;
       continue;
     }
     const from = trainedValue(b, k);
-    ap += costBetween(b.archetype, k, from, need - masteryBonus(b, k));
+    ap += costBetween(b.archetype, k, from, need - unlockBonus(b, k));
   }
   return { missing, ap: Number.isNaN(ap) ? null : ap };
 }
@@ -360,7 +364,7 @@ export function raiseFor(b: Build, req: [string, number][]): Build {
   const points = { ...b.points };
   for (const [k, need] of req) {
     if (!trainable(b.archetype, k)) continue;
-    const target = Math.min(attrCap(b.archetype, k), need - masteryBonus(b, k));
+    const target = Math.min(attrCap(b.archetype, k), need - unlockBonus(b, k));
     points[k] = Math.max(points[k] ?? 0, target - startValue(b.archetype, k));
   }
   return normaliseBuild({ ...b, points });

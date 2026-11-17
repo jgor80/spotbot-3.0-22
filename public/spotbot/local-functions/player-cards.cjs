@@ -4243,7 +4243,7 @@ var spec = (archetype, name, plus, a, b, c, unconfirmed) => ({
 });
 var SPECIALIZATIONS = [
   spec("shotstopper", "Shot Stopper+", "Cross Claimer", "gkHandling", "jumping", "gkPositioning"),
-  spec("shotstopper", "Octopus", "Deflector", "gkDiving", "strength", "gkPositioning"),
+  spec("shotstopper", "Octopus", "Footwork", "gkDiving", "strength", "gkPositioning", "Gives Footwork+ since EA's 23 October fix, was Deflector+ (one community post)"),
   spec("shotstopper", "Spider", "1v1 Close Down", "gkReflexes", "acceleration", "agility"),
   spec("sweeperkeeper", "Sweeper Keeper+", "Far Throw", "gkDiving", "vision", "gkKicking"),
   spec("sweeperkeeper", "Launcher", "Long Ball Pass", "gkKicking", "longPassing", "gkReflexes"),
@@ -4269,17 +4269,17 @@ var SPECIALIZATIONS = [
   spec("creator", "Creator+", "Whipped Pass", "vision", "crossing", "longPassing"),
   spec("creator", "Architect", "Dead Ball", "crossing", "shotPower", "fkAccuracy"),
   spec("creator", "Sniper", "Power Shot", "shotPower", "finishing", "longShots"),
-  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
+  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", "curve", "Curve replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us)"),
   spec("spark", "Spark+", "Quick Step", "agility", "acceleration", "sprintSpeed"),
   spec("spark", "Ace", "Chip Shot", "finishing", "reactions", "ballControl"),
-  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
+  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", "sprintSpeed", "Sprint Speed replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us)"),
   spec("magician", "Magician+", "First Touch", "ballControl", "acceleration", "composure"),
   spec("magician", "Hotshot", "Power Shot", "shotPower", "finishing", "longShots"),
   spec("finisher", "Finisher+", "Chip Shot", "composure", "reactions", "ballControl"),
-  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning according to one player report"),
+  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us); an EA Forums player reported the same"),
   spec("finisher", "Presser", "Relentless", "stamina", "agility", "aggression"),
   spec("target", "Target+", "Acrobatic", "jumping", "agility", "volleys"),
-  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning according to one player report"),
+  spec("target", "Runner", "Rapid", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us); an EA Forums player reported the same. Gives Rapid+ since that fix, was Enforcer+"),
   spec("target", "Roamer", "Incisive Pass", "shortPassing", "vision", "longPassing")
 ];
 var FACILITY_BOOST_MAX = 10;
